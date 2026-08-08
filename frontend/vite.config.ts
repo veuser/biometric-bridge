@@ -17,7 +17,13 @@ export default defineConfig({
     sourcemap: false,
   },
   server: {
-    // Dev only: `npm run dev` proxies to the backend so the cookie is same-origin.
+    // Pinned to IPv4. Vite otherwise binds ::1 only on Windows, so the dev server
+    // answers on localhost but refuses 127.0.0.1 — a confusing few minutes when a
+    // tool or script uses the numeric form.
+    host: '127.0.0.1',
+    port: 5173,
+    // Dev only: proxying keeps the API same-origin, so the session cookie behaves
+    // exactly as it does in production.
     proxy: {
       '/api': 'http://127.0.0.1:8080',
       '/health': 'http://127.0.0.1:8080',

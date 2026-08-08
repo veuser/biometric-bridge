@@ -28,3 +28,4 @@ dist/
 backend/dist/
 backend/build/
 .local*/
+.dev/
