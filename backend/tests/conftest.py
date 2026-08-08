@@ -59,9 +59,13 @@ def db(settings: Settings) -> Iterator[DatabaseManager]:
 
 @pytest.fixture
 def client(settings: Settings) -> Iterator[TestClient]:
+    """A running app with the schema built by Alembic.
+
+    Deliberately not ``create_all``: integration tests then exercise the same
+    migration path a real install runs, so a broken migration fails here rather
+    than on a customer's machine.
+    """
     from app.main import create_app
 
-    app = create_app(settings)
-    with TestClient(app) as test_client:
-        Base.metadata.create_all(app.state.db.engine)
+    with TestClient(create_app(settings)) as test_client:
         yield test_client

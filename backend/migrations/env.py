@@ -30,14 +30,19 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-_settings = get_settings()
-
-# Alembic bypasses DatabaseManager, so nothing else has created the data directory
-# yet. The installer runs migrations before the service ever starts, and SQLite will
-# not create a missing parent directory.
-_settings.paths.ensure()
-
-config.set_main_option("sqlalchemy.url", _settings.resolved_database_url())
+# When the running service migrates itself at startup it passes its own resolved URL
+# through config.attributes, so the two can never disagree about which file they are
+# touching. The CLI path (alembic revision/upgrade by hand) has no such attribute and
+# falls back to resolving settings here.
+_configured_url = config.attributes.get("configured_url")
+if _configured_url:
+    config.set_main_option("sqlalchemy.url", _configured_url)
+else:
+    _settings = get_settings()
+    # Alembic bypasses DatabaseManager, so nothing has created the data directory
+    # yet, and SQLite will not create a missing parent directory.
+    _settings.paths.ensure()
+    config.set_main_option("sqlalchemy.url", _settings.resolved_database_url())
 
 
 def _render_item(type_: str, obj: object, autogen_context: object) -> str | bool:

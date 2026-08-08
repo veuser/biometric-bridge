@@ -26,7 +26,17 @@ def test_health_is_anonymous_and_leaks_nothing(client: TestClient) -> None:
     assert response.json() == {"status": "healthy"}
 
 
+def _sign_in(client: TestClient) -> None:
+    """Detailed health is authenticated, so these tests need a session."""
+    response = client.post(
+        "/api/auth/bootstrap",
+        json={"username": "healthadmin", "password": "correct-horse-battery-staple"},
+    )
+    assert response.status_code == 201, response.text
+
+
 def test_detailed_health_reports_components(client: TestClient) -> None:
+    _sign_in(client)
     body = client.get("/health/detailed").json()
     assert body["status"] == "healthy"
     assert body["components"]["database"]["healthy"] is True
@@ -45,6 +55,7 @@ def test_detailed_health_reports_unhealthy_instead_of_raising(
     def _explode() -> Any:
         raise OperationalError("SELECT 1", {}, Exception(r"C:\ProgramData\secret-path"))
 
+    _sign_in(client)
     monkeypatch.setattr(client.app.state.db, "session", _explode)
 
     body = client.get("/health/detailed").json()
@@ -145,3 +156,34 @@ def test_alembic_migration_matches_the_models(tmp_path: Path) -> None:
     finally:
         migrated.dispose()
         from_models.dispose()
+
+
+def test_startup_migrates_a_brand_new_database(tmp_path: Path) -> None:
+    """Regression: the app must build its own schema on boot.
+
+    Without this, an upgraded binary pointed at a not-yet-migrated database
+    returns 500 from every endpoint that touches a table — which is exactly what
+    "install the new version and restart the service" would produce.
+    """
+    from app.main import create_app
+
+    settings = Settings(
+        app_env="test", data_root=str(tmp_path / "fresh"), log_to_stdout=False
+    )
+    assert not settings.paths.database_file.exists()
+
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/auth/bootstrap").json() == {"bootstrap_required": True}
+        assert settings.paths.database_file.exists()
+
+
+def test_startup_migration_is_idempotent(tmp_path: Path) -> None:
+    """The service restarts on every Windows boot; re-running must be a no-op."""
+    from app.main import create_app
+
+    settings = Settings(
+        app_env="test", data_root=str(tmp_path / "twice"), log_to_stdout=False
+    )
+    for _ in range(2):
+        with TestClient(create_app(settings)) as client:
+            assert client.get("/health").status_code == 200

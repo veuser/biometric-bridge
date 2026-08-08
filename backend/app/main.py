@@ -20,12 +20,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.api.routes import auth as auth_routes
 from app.api.routes import health as health_routes
+from app.api.routes import users as user_routes
 from app.core.config import Settings, get_settings
 from app.core.errors import BridgeError, SyncInProgressError
 from app.core.logging import configure_logging, get_logger
 from app.database.database import DatabaseManager
+from app.database.migrator import upgrade_to_head
+from app.services.auth_service import AuthService
 from app.services.health_service import HealthService
+from app.services.rate_limiter import RateLimiter
+from app.services.session_store import SessionStore
 
 logger = get_logger(__name__)
 
@@ -84,9 +90,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "timezone": settings.default_timezone,
             },
         )
+        # Before anything opens a session: an upgraded binary against a
+        # last-version database would otherwise 500 on every table it touches.
+        upgrade_to_head(settings)
+
         db = DatabaseManager(settings)
+        sessions = SessionStore()
         app.state.settings = settings
         app.state.db = db
+        app.state.sessions = sessions
+        app.state.auth_service = AuthService(sessions, RateLimiter())
         app.state.health_service = HealthService(db)
 
         logger.info("Startup complete; serving HTTP.", extra={"port": settings.port})
@@ -108,6 +121,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware, tls_enabled=settings.portal_tls_enabled)
 
     app.include_router(health_routes.router)
+    app.include_router(auth_routes.router)
+    app.include_router(user_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)
