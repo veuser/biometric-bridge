@@ -21,9 +21,11 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.routes import auth as auth_routes
+from app.api.routes import dashboard as dashboard_routes
 from app.api.routes import devices as device_routes
 from app.api.routes import health as health_routes
 from app.api.routes import hrms as hrms_routes
+from app.api.routes import settings as settings_routes
 from app.api.routes import sync as sync_routes
 from app.api.routes import users as user_routes
 from app.core.config import Settings, get_settings
@@ -31,6 +33,7 @@ from app.core.errors import BridgeError, SyncInProgressError
 from app.core.logging import configure_logging, get_logger
 from app.database.database import DatabaseManager
 from app.database.migrator import upgrade_to_head
+from app.scheduler.scheduler import SyncScheduler
 from app.services.auth_service import AuthService
 from app.services.health_service import HealthService
 from app.services.hrms_service import HrmsService
@@ -117,10 +120,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             close_interrupted_runs(boot_session)
             clear_locks_owned_by_this_process(boot_session)
 
+        # Started last, and after recovery, so a scheduled cycle can never fire
+        # against a half-initialised application.
+        scheduler = SyncScheduler(db)
+        app.state.scheduler = scheduler
+        scheduler.start()
+
         logger.info("Startup complete; serving HTTP.", extra={"port": settings.port})
         try:
             yield
         finally:
+            scheduler.shutdown()
             db.dispose()
             logger.info("Biometric Bridge stopped.")
 
@@ -141,6 +151,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(device_routes.router)
     app.include_router(hrms_routes.router)
     app.include_router(sync_routes.router)
+    app.include_router(settings_routes.router)
+    app.include_router(dashboard_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)
