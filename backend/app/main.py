@@ -23,6 +23,7 @@ from starlette.responses import Response
 from app.api.routes import auth as auth_routes
 from app.api.routes import devices as device_routes
 from app.api.routes import health as health_routes
+from app.api.routes import hrms as hrms_routes
 from app.api.routes import users as user_routes
 from app.core.config import Settings, get_settings
 from app.core.errors import BridgeError, SyncInProgressError
@@ -31,6 +32,7 @@ from app.database.database import DatabaseManager
 from app.database.migrator import upgrade_to_head
 from app.services.auth_service import AuthService
 from app.services.health_service import HealthService
+from app.services.hrms_service import HrmsService
 from app.services.rate_limiter import RateLimiter
 from app.services.session_store import SessionStore
 
@@ -103,6 +105,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.auth_service = AuthService(sessions, RateLimiter())
         app.state.health_service = HealthService(db)
 
+        # Redaction state is per-process: without this the stored HRMS key would be
+        # unprotected in the log until someone next saved the configuration.
+        with db.session() as boot_session:
+            HrmsService().register_existing_secret(boot_session)
+
         logger.info("Startup complete; serving HTTP.", extra={"port": settings.port})
         try:
             yield
@@ -125,6 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(user_routes.router)
     app.include_router(device_routes.router)
+    app.include_router(hrms_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)

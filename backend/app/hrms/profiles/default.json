@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "TEMPLATE — not a guess at any real API.",
+    "attendance_path deliberately carries a placeholder. The bridge refuses to",
+    "enable sync until it is replaced, so it can never invent an endpoint.",
+    "See docs/HRMS-PROFILE.md for what each key means, with worked examples."
+  ],
+
+  "attendance_path": "/REPLACE-WITH-YOUR-HRMS-ATTENDANCE-PATH",
+  "method": "POST",
+
+  "auth": {
+    "scheme": "header",
+    "header_name": "X-API-Key",
+    "value_template": "{api_key}",
+    "query_param": "api_key"
+  },
+
+  "tenant": {
+    "header_name": null,
+    "query_param": null
+  },
+
+  "extra_headers": {},
+
+  "batch": {
+    "mode": "array",
+    "envelope_path": "records",
+    "size": 200
+  },
+
+  "field_map": {
+    "employee_code": "employeeCode",
+    "punch_time": "punchTime",
+    "punch_type": "punchType",
+    "verification_type": "verificationType",
+    "device_serial": null,
+    "device_id": null,
+    "client_record_id": null
+  },
+
+  "value_map": {
+    "punch_type": {},
+    "verification_type": {}
+  },
+
+  "datetime_format": "iso8601_offset",
+  "datetime_pattern": "%Y-%m-%d %H:%M:%S",
+  "output_timezone": "Asia/Kolkata",
+
+  "response": {
+    "success_status_codes": [200, 201, 202, 204],
+    "success_path": null,
+    "processed_count_path": null,
+    "failed_count_path": null,
+    "error_message_path": null,
+    "results_path": null,
+    "result_id_path": null,
+    "result_ok_path": null
+  },
+
+  "test_connection": {
+    "path": null,
+    "method": "GET"
+  }
+}
