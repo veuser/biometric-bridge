@@ -146,7 +146,7 @@ export default function UsersPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
-                  <Form.Text muted>At least 12 characters.</Form.Text>
+                  <Form.Text muted>A passphrase is easiest to remember.</Form.Text>
                 </Form.Group>
               </Col>
               <Col md={12}>

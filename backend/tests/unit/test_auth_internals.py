@@ -37,24 +37,46 @@ class TestPasswords:
     def test_argon2_is_used(self) -> None:
         assert hash_password("correct-horse-battery").startswith("$argon2id$")
 
+    def test_default_policy_allows_a_short_password(self) -> None:
+        """The minimum is configurable; the shipped default is permissive."""
+        validate_password_policy("abcd")
+
+    def test_empty_password_is_always_rejected(self) -> None:
+        with pytest.raises(PasswordPolicyError, match="required"):
+            validate_password_policy("")
+
+    def test_below_the_configured_minimum_is_rejected(self) -> None:
+        with pytest.raises(PasswordPolicyError, match="8 characters"):
+            validate_password_policy("short", min_length=8)
+
+    def test_password_equal_to_the_username_is_always_rejected(self) -> None:
+        """Cheap at any policy level, and catches the worst habit."""
+        with pytest.raises(PasswordPolicyError, match="same as the username"):
+            validate_password_policy("admin", username="admin")
+
     @pytest.mark.parametrize(
         ("password", "fragment"),
         [
             ("short", "12 characters"),
             ("password123", "12 characters"),
-            ("passw0rdpassw0rd", "too common") if False else ("aaaaaaaaaaaaaa", "repeated"),
+            ("aaaaaaaaaaaaaa", "repeated"),
         ],
     )
-    def test_weak_passwords_are_rejected(self, password: str, fragment: str) -> None:
+    def test_strict_policy_rejects_weak_passwords(self, password: str, fragment: str) -> None:
         with pytest.raises(PasswordPolicyError, match=fragment):
-            validate_password_policy(password)
+            validate_password_policy(password, min_length=12)
 
-    def test_common_password_is_rejected(self) -> None:
+    def test_strict_policy_rejects_a_common_password(self) -> None:
         with pytest.raises(PasswordPolicyError, match="too common"):
-            validate_password_policy("biometricbridge")
+            validate_password_policy("biometricbridge", min_length=12)
 
-    def test_a_long_passphrase_is_accepted(self) -> None:
-        validate_password_policy("correct horse battery staple")
+    def test_relaxed_policy_skips_the_blocklist(self) -> None:
+        """Blocking "admin" while allowing "adm1n" is friction without protection,
+        so the extra checks only apply once the minimum is raised."""
+        validate_password_policy("biometricbridge", min_length=4)
+
+    def test_a_long_passphrase_is_accepted_under_strict_policy(self) -> None:
+        validate_password_policy("correct horse battery staple", min_length=12)
 
     def test_tokens_are_unique_and_long(self) -> None:
         tokens = {generate_session_token() for _ in range(200)}

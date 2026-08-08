@@ -24,6 +24,7 @@ All prefixed `BIOMETRIC_BRIDGE_`.
 | `PORT` | `8080` | Must match the firewall rule |
 | `PORTAL_TLS_ENABLED` | `false` | Set to `true` once a certificate is in place — it turns on the `Secure` cookie flag and HSTS |
 | `DEFAULT_TIMEZONE` | `Asia/Kolkata` | How device-local timestamps are interpreted |
+| `MIN_PASSWORD_LENGTH` | `4` | Portal password minimum. Set to 12+ to also enable the common-password blocklist |
 | `LOG_LEVEL` | `INFO` | `DEBUG` is verbose; useful when diagnosing a device |
 | `LOG_MAX_BYTES` | `10485760` | Rotation threshold |
 | `LOG_BACKUP_COUNT` | `10` | |

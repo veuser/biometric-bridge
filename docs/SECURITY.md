@@ -64,8 +64,12 @@ rows — no schema migration, and no ambiguity about which rows are already prot
 - Rate limiting of 5 attempts per 15 minutes, keyed on username **and** address
   together — username alone would let anyone lock an administrator out of their own
   portal. Plus a durable account lockout after 10 consecutive failures.
-- Minimum 12-character passwords; common passwords and passwords containing the
-  username are rejected.
+- Password length is a deployment decision: `BIOMETRIC_BRIDGE_MIN_PASSWORD_LENGTH`
+  (default 4). A password equal to the username, and an empty one, are always
+  rejected. Setting the minimum to 12 or more additionally enables the
+  common-password blocklist and character-variety checks.
+  **On a plain-HTTP LAN portal the password is the only barrier to full device and
+  HRMS configuration, so a real one is worth using in production.**
 
 ### Data handling
 

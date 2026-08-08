@@ -69,7 +69,9 @@ export default function LoginPage() {
                 required
               />
               {isSetup && (
-                <Form.Text muted>At least 12 characters. A passphrase works well.</Form.Text>
+                <Form.Text muted>
+                  Choose something only you know. A passphrase is easiest to remember.
+                </Form.Text>
               )}
             </Form.Group>
             <Button type="submit" className="w-100" disabled={submit.isPending}>

@@ -110,7 +110,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.db = db
         app.state.sessions = sessions
-        app.state.auth_service = AuthService(sessions, RateLimiter())
+        app.state.auth_service = AuthService(
+            sessions, RateLimiter(), min_password_length=settings.min_password_length
+        )
         app.state.health_service = HealthService(db)
 
         # Redaction state is per-process: without this the stored HRMS key would be

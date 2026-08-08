@@ -54,7 +54,9 @@ service and waits for `/health` to answer. It prints the portal URL when done.
 
 1. Open `http://<machine-name>:8080`.
 2. **Create the administrator account.** There are no default credentials, so the
-   first visit is a setup screen. Use a passphrase of at least 12 characters.
+   first visit is a setup screen. The minimum length is configurable
+   (`BIOMETRIC_BRIDGE_MIN_PASSWORD_LENGTH`, default 4) — but this portal is plain
+   HTTP on the LAN, so use a real password in production.
 3. **Devices** → add each terminal. Set *Punch type* to match the hardware: a
    dedicated entry terminal is `CHECK_IN`, an exit terminal is `CHECK_OUT`. Use
    **Test Connection** before saving — it reports firmware, buffer size and clock

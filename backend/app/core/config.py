@@ -47,6 +47,10 @@ class Settings(BaseSettings):
 
     default_timezone: str = Field(default="Asia/Kolkata")
 
+    #: Minimum portal password length. Lower it for a lab or a demo; raise it to
+    #: 12 or more to also enable the common-password and character-variety checks.
+    min_password_length: int = Field(default=4, ge=1, le=128)
+
     log_level: str = Field(default="INFO")
     log_max_bytes: int = Field(default=10 * 1024 * 1024)
     log_backup_count: int = Field(default=10)

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DbSession
 from app.core.enums import UserRole
 from app.core.logging import get_logger
 from app.core.security import (
+    DEFAULT_MIN_PASSWORD_LENGTH,
     PasswordPolicyError,
     hash_password,
     needs_rehash,
@@ -41,9 +42,16 @@ class RateLimitedError(AuthError):
 
 
 class AuthService:
-    def __init__(self, sessions: SessionStore, limiter: RateLimiter) -> None:
+    def __init__(
+        self,
+        sessions: SessionStore,
+        limiter: RateLimiter,
+        *,
+        min_password_length: int = DEFAULT_MIN_PASSWORD_LENGTH,
+    ) -> None:
         self._sessions = sessions
         self._limiter = limiter
+        self._min_password_length = min_password_length
 
     # ── login ────────────────────────────────────────────────────────────────
 
@@ -140,7 +148,9 @@ class AuthService:
             raise AuthError("That username is already taken.")
 
         try:
-            validate_password_policy(password, username=username)
+            validate_password_policy(
+                password, username=username, min_length=self._min_password_length
+            )
         except PasswordPolicyError as exc:
             raise AuthError(str(exc)) from exc
 
@@ -157,7 +167,9 @@ class AuthService:
         if user is None:
             raise AuthError("User not found.")
         try:
-            validate_password_policy(new_password, username=user.username)
+            validate_password_policy(
+                new_password, username=user.username, min_length=self._min_password_length
+            )
         except PasswordPolicyError as exc:
             raise AuthError(str(exc)) from exc
 

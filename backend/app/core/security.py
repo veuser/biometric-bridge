@@ -14,7 +14,16 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 _hasher = PasswordHasher()
 
-MIN_PASSWORD_LENGTH = 12
+#: Default floor. Configurable via BIOMETRIC_BRIDGE_MIN_PASSWORD_LENGTH so a
+#: deployment can set its own bar — the portal runs over plain HTTP on a LAN, so
+#: this is the only thing between a passer-by and full configuration access.
+DEFAULT_MIN_PASSWORD_LENGTH = 4
+
+#: At or above this, the extra checks (common passwords, low character variety)
+#: apply. Below it the operator has deliberately lowered the bar, and being then
+#: blocked by a blocklist would just be irritating rather than protective.
+STRICT_POLICY_THRESHOLD = 12
+
 SESSION_TOKEN_BYTES = 32
 
 #: Rejected outright regardless of length. Not a substitute for a real breach
@@ -55,17 +64,38 @@ def needs_rehash(password_hash: str) -> bool:
         return True
 
 
-def validate_password_policy(password: str, *, username: str | None = None) -> None:
+def validate_password_policy(
+    password: str,
+    *,
+    username: str | None = None,
+    min_length: int = DEFAULT_MIN_PASSWORD_LENGTH,
+) -> None:
     """Raise :class:`PasswordPolicyError` if the password is unacceptable.
 
-    Length is weighted over composition rules deliberately: a 12-character
-    passphrase beats ``P@ssw0rd!`` and operators are far more likely to actually
-    use it.
+    Length is weighted over composition rules deliberately: a long passphrase beats
+    ``P@ssw0rd!`` and operators are far more likely to actually use it.
+
+    The blocklist and character-variety checks apply only when ``min_length`` is at
+    least :data:`STRICT_POLICY_THRESHOLD`. A deployment that has lowered the minimum
+    has made a deliberate choice; second-guessing it with a blocklist would block
+    ``admin`` while still allowing ``adm1n``, which is friction without protection.
     """
-    if len(password) < MIN_PASSWORD_LENGTH:
+    if not password:
+        raise PasswordPolicyError("Password is required.")
+
+    if len(password) < min_length:
+        plural = "" if min_length == 1 else "s"
         raise PasswordPolicyError(
-            f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+            f"Password must be at least {min_length} character{plural}."
         )
+
+    if username and username.lower() == password.lower():
+        # Cheap enough to keep at any policy level, and catches the worst habit.
+        raise PasswordPolicyError("Password must not be the same as the username.")
+
+    if min_length < STRICT_POLICY_THRESHOLD:
+        return
+
     if password.lower() in _BANNED_PASSWORDS:
         raise PasswordPolicyError("That password is too common. Choose a different one.")
     if username and username.lower() in password.lower():

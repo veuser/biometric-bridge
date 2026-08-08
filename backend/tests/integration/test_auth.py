@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import SESSION_COOKIE_NAME
 
 GOOD_PASSWORD = "correct-horse-battery-staple"
+SHORT_PASSWORD = "abcd"
 USERNAME = "bridgeadmin"
 
 
@@ -54,12 +55,39 @@ def test_bootstrap_is_refused_once_a_user_exists(client: TestClient) -> None:
     assert response.status_code == 409
 
 
-def test_bootstrap_enforces_password_policy(client: TestClient) -> None:
+def test_bootstrap_accepts_a_short_password_by_default(client: TestClient) -> None:
+    """The minimum is configurable and ships permissive; raise
+    BIOMETRIC_BRIDGE_MIN_PASSWORD_LENGTH to tighten it."""
     response = client.post(
-        "/api/auth/bootstrap", json={"username": USERNAME, "password": "short"}
+        "/api/auth/bootstrap", json={"username": USERNAME, "password": "abcd"}
     )
-    assert response.status_code == 400
-    assert "12 characters" in response.json()["detail"]
+    assert response.status_code == 201
+
+
+def test_bootstrap_rejects_an_empty_password(client: TestClient) -> None:
+    response = client.post("/api/auth/bootstrap", json={"username": USERNAME, "password": ""})
+    assert response.status_code == 422
+
+
+def test_bootstrap_enforces_a_raised_minimum(tmp_path: object) -> None:
+    """A deployment that raises the bar gets it enforced."""
+    from fastapi.testclient import TestClient as Client
+
+    from app.core.config import Settings
+    from app.main import create_app
+
+    settings = Settings(
+        app_env="test",
+        data_root=str(tmp_path / "strict"),  # type: ignore[operator]
+        log_to_stdout=False,
+        min_password_length=12,
+    )
+    with Client(create_app(settings)) as strict:
+        response = strict.post(
+            "/api/auth/bootstrap", json={"username": USERNAME, "password": "short"}
+        )
+        assert response.status_code == 400
+        assert "12 characters" in response.json()["detail"]
 
 
 def test_session_cookie_is_httponly_and_not_in_the_body(client: TestClient) -> None:
@@ -171,10 +199,10 @@ def test_an_admin_cannot_deactivate_themselves(client: TestClient) -> None:
     assert response.status_code == 400
 
 
-def test_password_must_not_contain_the_username(client: TestClient) -> None:
+def test_password_must_not_equal_the_username(client: TestClient) -> None:
+    """Enforced at every policy level."""
     response = client.post(
-        "/api/auth/bootstrap",
-        json={"username": "bridgeadmin", "password": "bridgeadmin-2026!"},
+        "/api/auth/bootstrap", json={"username": "bridgeadmin", "password": "bridgeadmin"}
     )
     assert response.status_code == 400
-    assert "username" in response.json()["detail"]
+    assert "same as the username" in response.json()["detail"]
