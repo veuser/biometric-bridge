@@ -24,6 +24,7 @@ from app.api.routes import auth as auth_routes
 from app.api.routes import devices as device_routes
 from app.api.routes import health as health_routes
 from app.api.routes import hrms as hrms_routes
+from app.api.routes import sync as sync_routes
 from app.api.routes import users as user_routes
 from app.core.config import Settings, get_settings
 from app.core.errors import BridgeError, SyncInProgressError
@@ -35,6 +36,8 @@ from app.services.health_service import HealthService
 from app.services.hrms_service import HrmsService
 from app.services.rate_limiter import RateLimiter
 from app.services.session_store import SessionStore
+from app.services.sync_lock import clear_locks_owned_by_this_process
+from app.services.sync_runner import close_interrupted_runs
 
 logger = get_logger(__name__)
 
@@ -109,6 +112,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # unprotected in the log until someone next saved the configuration.
         with db.session() as boot_session:
             HrmsService().register_existing_secret(boot_session)
+            # A run left RUNNING by a killed process would otherwise sit in the
+            # history forever and make the dashboard claim a sync is in progress.
+            close_interrupted_runs(boot_session)
+            clear_locks_owned_by_this_process(boot_session)
 
         logger.info("Startup complete; serving HTTP.", extra={"port": settings.port})
         try:
@@ -133,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(user_routes.router)
     app.include_router(device_routes.router)
     app.include_router(hrms_routes.router)
+    app.include_router(sync_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)

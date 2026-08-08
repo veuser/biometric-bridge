@@ -73,6 +73,11 @@ class HrmsClient:
         self._timeout = httpx.Timeout(request_timeout, connect=connect_timeout)
         self._transport = transport
 
+    @property
+    def profile(self) -> HrmsProfile:
+        """The active contract. The sync engine needs it to size batches."""
+        return self._profile
+
     # ── request construction ────────────────────────────────────────────────
 
     def _headers(self, api_key: str, tenant: str | None) -> dict[str, str]:

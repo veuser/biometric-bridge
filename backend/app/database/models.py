@@ -13,6 +13,8 @@ the way in and re-attaches UTC on the way out.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -58,6 +60,40 @@ class UtcDateTime(TypeDecorator[datetime]):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+class StrEnumType(TypeDecorator[Any]):
+    """Stores a :class:`StrEnum` as its value and reconstructs it on load.
+
+    Without this, a column typed ``Mapped[SyncStatus]`` round-trips as a plain
+    ``str``. Equality still works, but ``run.status is SyncStatus.RUNNING`` silently
+    returns ``False`` on a row loaded from the database — a bug that only appears
+    after a restart, which is exactly when the recovery paths run.
+
+    Stored as text rather than a native ENUM so adding a status is a code change,
+    not a migration.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_class: type[StrEnum], length: int = 40) -> None:
+        super().__init__(length=length)
+        self._enum_class = enum_class
+
+    def process_bind_param(self, value: Any, dialect: object) -> str | None:
+        if value is None:
+            return None
+        return str(self._enum_class(value))
+
+    def process_result_value(self, value: Any, dialect: object) -> Any:
+        if value is None:
+            return None
+        try:
+            return self._enum_class(value)
+        except ValueError:
+            # A value written by a newer version must not make the row unreadable.
+            return value
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -84,10 +120,10 @@ class Device(TimestampMixin, Base):
     serial_number: Mapped[str | None] = mapped_column(String(64))
     location: Mapped[str | None] = mapped_column(String(120))
     device_type: Mapped[DeviceType] = mapped_column(
-        String(32), nullable=False, default=DeviceType.ESSL
+        StrEnumType(DeviceType, 32), nullable=False, default=DeviceType.ESSL
     )
     role: Mapped[DeviceRole] = mapped_column(
-        String(32), nullable=False, default=DeviceRole.CHECK_IN
+        StrEnumType(DeviceRole, 32), nullable=False, default=DeviceRole.CHECK_IN
     )
 
     #: ZK device communication key, wrapped by the SecretProtector seam. This is the
@@ -155,7 +191,7 @@ class SyncState(TimestampMixin, Base):
 
     last_sync_started_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     last_sync_completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
-    last_status: Mapped[SyncStatus | None] = mapped_column(String(40))
+    last_status: Mapped[SyncStatus | None] = mapped_column(StrEnumType(SyncStatus, 40))
     last_error: Mapped[str | None] = mapped_column(Text)
 
     #: Persisted half of the two-layer lock. Survives a process crash so startup can
@@ -179,7 +215,7 @@ class SyncRun(Base):
     device_id: Mapped[int] = mapped_column(
         ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    trigger: Mapped[SyncTrigger] = mapped_column(String(32), nullable=False)
+    trigger: Mapped[SyncTrigger] = mapped_column(StrEnumType(SyncTrigger, 32), nullable=False)
 
     started_at: Mapped[datetime] = mapped_column(
         UtcDateTime, default=_utcnow, nullable=False, index=True
@@ -205,7 +241,9 @@ class SyncRun(Base):
     device_read_ms: Mapped[int | None] = mapped_column(Integer)
     hrms_ms: Mapped[int | None] = mapped_column(Integer)
 
-    status: Mapped[SyncStatus] = mapped_column(String(40), nullable=False, index=True)
+    status: Mapped[SyncStatus] = mapped_column(
+        StrEnumType(SyncStatus, 40), nullable=False, index=True
+    )
     error_message: Mapped[str | None] = mapped_column(Text)
 
     device: Mapped[Device] = relationship(back_populates="sync_runs")
@@ -234,7 +272,9 @@ class User(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(String(20), nullable=False, default=UserRole.ADMIN)
+    role: Mapped[UserRole] = mapped_column(
+        StrEnumType(UserRole, 20), nullable=False, default=UserRole.ADMIN
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
