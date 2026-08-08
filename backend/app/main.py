@@ -21,10 +21,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.routes import auth as auth_routes
+from app.api.routes import backups as backup_routes
 from app.api.routes import dashboard as dashboard_routes
 from app.api.routes import devices as device_routes
 from app.api.routes import health as health_routes
 from app.api.routes import hrms as hrms_routes
+from app.api.routes import logs as log_routes
 from app.api.routes import settings as settings_routes
 from app.api.routes import sync as sync_routes
 from app.api.routes import users as user_routes
@@ -153,6 +155,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sync_routes.router)
     app.include_router(settings_routes.router)
     app.include_router(dashboard_routes.router)
+    app.include_router(log_routes.router)
+    app.include_router(backup_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)

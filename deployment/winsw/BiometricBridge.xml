@@ -1,0 +1,47 @@
+<service>
+  <id>BiometricBridge</id>
+  <name>Biometric Bridge</name>
+  <description>
+    Reads attendance punches from eSSL/ZK biometric terminals on the local network
+    and pushes them to the organisation's existing HRMS API.
+  </description>
+
+  <executable>%BASE%\BiometricBridge\BiometricBridge.exe</executable>
+  <workingdirectory>%BASE%\BiometricBridge</workingdirectory>
+
+  <!-- Starts on boot without anyone logging in. -->
+  <startmode>Automatic</startmode>
+
+  <!--
+    Restart on failure, with a widening gap. A terminal or HRMS being unreachable is
+    normal and does not crash the service; this is for the genuine failures - a
+    corrupted file, a port already bound - where retrying forever every second would
+    just fill the disk with logs.
+  -->
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <onfailure action="restart" delay="300 sec"/>
+  <resetfailure>1 hour</resetfailure>
+
+  <!--
+    WinSW captures stdout/stderr only. The application's own JSON log is the one to
+    read; this catches startup failures that happen before logging is configured.
+  -->
+  <logpath>%ProgramData%\BiometricBridge\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+
+  <env name="BIOMETRIC_BRIDGE_APP_ENV" value="production"/>
+  <env name="BIOMETRIC_BRIDGE_HOST" value="0.0.0.0"/>
+  <env name="BIOMETRIC_BRIDGE_PORT" value="8080"/>
+  <env name="BIOMETRIC_BRIDGE_LOG_LEVEL" value="INFO"/>
+  <env name="BIOMETRIC_BRIDGE_LOG_TO_STDOUT" value="false"/>
+
+  <!--
+    Give the process time to finish an in-flight sync. A full device buffer read
+    takes several seconds; killing it mid-write is worse than waiting.
+  -->
+  <stoptimeout>30 sec</stoptimeout>
+</service>

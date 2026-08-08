@@ -1,0 +1,35 @@
+/* Bootstrap does the work; this is only what Bootstrap has no class for. */
+:root {
+  --bb-sidebar-width: 232px;
+}
+
+body {
+  background-color: #f5f6f8;
+}
+
+.bb-sidebar {
+  width: var(--bb-sidebar-width);
+  min-height: 100vh;
+}
+
+.bb-content {
+  min-height: 100vh;
+}
+
+.bb-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.bb-log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The viewer's theme is not ours to guess on a LAN admin tool, but respecting a
+   dark preference costs one block. */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #f5f6f8;
+  }
+}

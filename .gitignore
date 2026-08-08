@@ -23,4 +23,8 @@ backups/
 
 build/
 dist/
-*.spec
+
+# PyInstaller output (built by deployment/build.ps1)
+backend/dist/
+backend/build/
+.local*/
