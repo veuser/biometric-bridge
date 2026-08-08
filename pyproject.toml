@@ -1,0 +1,52 @@
+[project]
+name = "biometric-bridge"
+version = "0.1.0"
+description = "LAN bridge that pushes eSSL/ZK biometric attendance punches to an existing HRMS API"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+markers = [
+    "live: talks to real biometric hardware; deselected by default",
+]
+
+[tool.coverage.run]
+source = ["backend/app"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+# Phase 8 raises this to 80. Kept honest rather than aspirational.
+fail_under = 0
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["backend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "DTZ", "TID", "RUF"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is the framework idiom
+
+[tool.ruff.lint.per-file-ignores]
+# The ZK protocol hands us naive device-local datetimes; converting them is this
+# module's entire job, so the naive-datetime rules are suppressed there only.
+"backend/app/biometric/essl_client.py" = ["DTZ"]
+"backend/tests/*" = ["DTZ"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "backend"
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["zk.*", "apscheduler.*"]
+ignore_missing_imports = true

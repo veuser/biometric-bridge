@@ -1,0 +1,155 @@
+"""FastAPI application factory and process lifespan.
+
+Startup must never block on something outside this machine's control. A biometric
+device that is switched off or an HRMS that is unreachable are *normal* conditions on
+a customer LAN — the service still has to start so an operator can log in and see
+*why* things are unhealthy (PLAN.md §44). Connectivity is therefore probed
+asynchronously by the health monitor, never during startup.
+"""
+
+from __future__ import annotations
+
+import contextlib
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+from app.api.routes import health as health_routes
+from app.core.config import Settings, get_settings
+from app.core.errors import BridgeError, SyncInProgressError
+from app.core.logging import configure_logging, get_logger
+from app.database.database import DatabaseManager
+from app.services.health_service import HealthService
+
+logger = get_logger(__name__)
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Baseline hardening headers.
+
+    HSTS is deliberately absent: the portal runs over plain HTTP on the LAN
+    (PLAN.md §8). Sending HSTS over HTTP is ignored by browsers anyway, and sending
+    it once TLS is enabled is handled by flipping ``portal_tls_enabled``.
+    """
+
+    def __init__(self, app: object, *, tls_enabled: bool) -> None:
+        super().__init__(app)  # type: ignore[arg-type]
+        self._tls_enabled = tls_enabled
+
+    async def dispatch(self, request: Request, call_next: object) -> Response:
+        response: Response = await call_next(request)  # type: ignore[operator]
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+        )
+        if self._tls_enabled:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    paths = settings.paths
+    paths.ensure()
+
+    configure_logging(
+        level=settings.log_level,
+        log_file=paths.log_file,
+        max_bytes=settings.log_max_bytes,
+        backup_count=settings.log_backup_count,
+        to_stdout=settings.log_to_stdout,
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info(
+            "Biometric Bridge starting.",
+            extra={
+                "app_env": settings.app_env,
+                "data_root": str(paths.root),
+                "timezone": settings.default_timezone,
+            },
+        )
+        db = DatabaseManager(settings)
+        app.state.settings = settings
+        app.state.db = db
+        app.state.health_service = HealthService(db)
+
+        logger.info("Startup complete; serving HTTP.", extra={"port": settings.port})
+        try:
+            yield
+        finally:
+            db.dispose()
+            logger.info("Biometric Bridge stopped.")
+
+    app = FastAPI(
+        title="Biometric Bridge",
+        version="0.1.0",
+        summary="Pushes eSSL/ZK biometric attendance punches to an existing HRMS API.",
+        lifespan=lifespan,
+        docs_url="/api/docs",
+        openapi_url="/api/openapi.json",
+    )
+
+    app.add_middleware(SecurityHeadersMiddleware, tls_enabled=settings.portal_tls_enabled)
+
+    app.include_router(health_routes.router)
+
+    _register_exception_handlers(app)
+    _mount_portal(app)
+    return app
+
+
+def _register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(SyncInProgressError)
+    async def _sync_in_progress(_request: Request, exc: SyncInProgressError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": exc.message})
+
+    @app.exception_handler(BridgeError)
+    async def _bridge_error(_request: Request, exc: BridgeError) -> JSONResponse:
+        # exc.message is written for operators; the stack trace goes to the log only,
+        # never to the portal (PLAN.md §19).
+        logger.warning("Request failed.", exc_info=exc, extra={"status": exc.status})
+        return JSONResponse(
+            status_code=400, content={"detail": exc.message, "status": str(exc.status)}
+        )
+
+
+def _mount_portal(app: FastAPI) -> None:
+    """Serve the built React app, if present.
+
+    Absent during backend-only development and in the test suite, so this is a
+    no-op rather than an error — the API must be usable without a frontend build.
+    """
+    if not STATIC_DIR.is_dir() or not (STATIC_DIR / "index.html").is_file():
+        logger.info("No frontend build found; serving API only.", extra={"path": str(STATIC_DIR)})
+        return
+
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str) -> Response:
+        """Client-side routing: unknown non-API paths return index.html."""
+        candidate = STATIC_DIR / full_path
+        if full_path and candidate.is_file() and STATIC_DIR in candidate.resolve().parents:
+            return FileResponse(candidate)
+        return FileResponse(STATIC_DIR / "index.html")
+
+
+app = create_app()
