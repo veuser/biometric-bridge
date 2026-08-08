@@ -21,6 +21,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.api.routes import auth as auth_routes
+from app.api.routes import devices as device_routes
 from app.api.routes import health as health_routes
 from app.api.routes import users as user_routes
 from app.core.config import Settings, get_settings
@@ -123,6 +124,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(auth_routes.router)
     app.include_router(user_routes.router)
+    app.include_router(device_routes.router)
 
     _register_exception_handlers(app)
     _mount_portal(app)

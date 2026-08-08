@@ -17,6 +17,7 @@ import json
 import logging
 import logging.handlers
 import sys
+from collections.abc import MutableMapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -161,5 +162,33 @@ def configure_logging(
     logging.getLogger("apscheduler.executors").setLevel(logging.WARNING)
 
 
-def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(name)
+def sanitize_extra(extra: dict[str, Any]) -> dict[str, Any]:
+    """Rename keys that would collide with reserved ``LogRecord`` attributes.
+
+    ``logging`` raises ``KeyError`` if an ``extra`` key shadows a built-in record
+    attribute — ``name``, ``module``, ``filename`` and friends. Left unguarded that
+    turns an innocuous log line into a 500 at runtime, and only for the code paths
+    someone happened to exercise. Colliding keys are prefixed instead so the value
+    still reaches the log.
+    """
+    cleaned: dict[str, Any] = {}
+    for key, value in extra.items():
+        if key in _RESERVED_ATTRS or key in {"message", "asctime"}:
+            cleaned[f"ctx_{key}"] = value
+        else:
+            cleaned[key] = value
+    return cleaned
+
+
+class BridgeLoggerAdapter(logging.LoggerAdapter):  # type: ignore[type-arg]
+    """Logger that cannot be crashed by a badly chosen ``extra`` key."""
+
+    def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[Any, Any]:
+        extra = kwargs.get("extra")
+        if extra:
+            kwargs["extra"] = sanitize_extra(dict(extra))
+        return msg, kwargs
+
+
+def get_logger(name: str) -> BridgeLoggerAdapter:
+    return BridgeLoggerAdapter(logging.getLogger(name), {})

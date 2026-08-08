@@ -107,3 +107,27 @@ def test_filter_is_a_noop_when_no_secrets_registered() -> None:
     record = _record("plain message")
     assert SecretRedactingFilter().filter(record) is True
     assert record.getMessage() == "plain message"
+
+
+class TestExtraKeySafety:
+    """A log statement must never be able to turn a working request into a 500."""
+
+    def test_reserved_extra_keys_are_renamed_not_fatal(self) -> None:
+        from app.core.logging import sanitize_extra
+
+        cleaned = sanitize_extra({"name": "Entry", "device_id": 1, "module": "x"})
+        assert cleaned == {"ctx_name": "Entry", "device_id": 1, "ctx_module": "x"}
+
+    def test_logging_with_a_reserved_key_does_not_raise(self) -> None:
+        from app.core.logging import get_logger
+
+        # Plain logging.Logger raises KeyError here; the adapter must not.
+        get_logger("test").info("device saved", extra={"name": "Entry", "filename": "x"})
+
+    def test_non_reserved_keys_pass_through_untouched(self) -> None:
+        from app.core.logging import sanitize_extra
+
+        assert sanitize_extra({"device_id": 7, "buffer_records": 900}) == {
+            "device_id": 7,
+            "buffer_records": 900,
+        }

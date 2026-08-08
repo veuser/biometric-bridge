@@ -50,9 +50,45 @@ value is punch-state `1` mis-decoded as "Password". The bridge will read
 raw integers in device diagnostics so the mapping can be verified against your
 actual hardware before go-live.
 
-**Action item during Phase 2:** dump raw `(status, punch)` pairs from both live
-devices and confirm the mapping empirically. Do not trust the table above blindly —
-eSSL firmware variants differ.
+**VERIFIED ON LIVE HARDWARE — 2026-08-08.** `tests/manual/live_device_check.py` was
+run against both terminals. Results:
+
+| | Entry `172.20.200.26` | Exit `172.20.200.25` |
+|---|---|---|
+| Serial | `BOCK222661069` | `BJ2C184562186` |
+| Firmware / platform | Ver 6.60 Oct 2021 / ZLM60_TFT | Ver 6.60 May 2018 / ZMM200_TFT |
+| Users / buffered records | 110 / 19,885 | 110 / 20,379 |
+| Full-buffer read | **7,641 ms** | **7,234 ms** |
+| Clock skew vs bridge | **−154 s** | **−144 s** |
+| `punch` values seen | `0` ×55 (all) | `1` ×85, `0` ×3 |
+| `status` values seen | `1` ×14, `4` ×41 | `1` ×13, `4` ×75 |
+
+**The mapping correction is confirmed.** `punch` really is the attendance state:
+the entry terminal reports `punch=0` for every record and the exit terminal reports
+`punch=1` for 85 of 88. The spike would have labelled all of those a verification
+method. `status` varies independently with how the person identified, exactly as the
+corrected mapping predicts.
+
+Three things the live run surfaced that the design has to answer:
+
+1. **`status=4` is unrecognised and it is the majority case** — 116 of 143 records
+   across both terminals. Its meaning is not settled between firmware families
+   (documented variously as face, card, or fingerprint+card), so it is deliberately
+   left as `UNKNOWN` rather than guessed at: sending a wrong verification method to
+   HRMS is worse than sending none. **Open question 7.**
+2. **The exit terminal reported 3 records with `punch=0`** — someone pressed the
+   check-in key on the exit device. The per-device `role` override (§2) forces these
+   to `CHECK_OUT`, which is the intended behaviour for a dedicated entry/exit pair,
+   but it is now a confirmed real occurrence rather than a hypothetical.
+3. **Both device clocks are ~2.5 minutes behind the bridge**, past the 120 s warning
+   threshold. Every punch is currently being recorded ~150 s early. This is not a
+   bridge defect and the bridge will not correct it (§5.3), but it must be fixed on
+   the terminals before go-live or every attendance record inherits the offset.
+
+**Poll cost is now a measured number, not an estimate:** ~7.5 s per device per poll
+for a ~20k-record buffer. Two devices is ~15 s of work per cycle. That comfortably
+fits the 5-minute default and confirms that the 1-minute option must carry a warning
+— it would leave the bridge reading almost continuously.
 
 ### 1.2 Constraint — the ZK protocol has no server-side time filter
 
@@ -701,5 +737,11 @@ no schedule time — but Phase 3 will not be guessed at.
    unaffected and stays as planned.
 6. **Devices in scope at go-live** — plan assumes the two known devices; multi-site
    (Hyderabad/Bangalore) is supported by design but changes install topology.
+7. **What does `status=4` mean on these terminals?** (§1.1) It is 81% of observed
+   punches and currently decodes to `UNKNOWN`. Answering it is a one-line change to
+   `VERIFICATION_BY_STATUS`. Only matters if the HRMS contract actually wants a
+   verification method — if that field maps to `null`, this is cosmetic.
+8. **Device clocks are ~150 s slow** (§1.1). Operator action on the terminals, not a
+   code change, but it should happen before the first production sync.
 
 None of these block starting Phase 1.
