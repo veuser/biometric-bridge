@@ -35,6 +35,13 @@ def punch_to_record(punch: BiometricPunch, profile: HrmsProfile) -> dict[str, An
         field_map.punch_time: format_timestamp(punch.punch_time, profile),
     }
 
+    # Sent only when the profile names a field for it AND the terminal actually had
+    # a name. Omitted rather than sent empty: a blank name is not information, and
+    # the receiving side already holds the authoritative one once the employee is
+    # enrolled — this exists so an *unenrolled* punch can say who it was.
+    if field_map.employee_name and punch.employee_name:
+        record[field_map.employee_name] = punch.employee_name
+
     if field_map.punch_type:
         value = str(punch.punch_type)
         record[field_map.punch_type] = profile.value_map.punch_type.get(value, value)

@@ -171,6 +171,27 @@ class EsslBiometricDevice(BiometricDevice):
             raw = self._conn.get_attendance() or []
             elapsed_ms = int((time.monotonic() - started) * 1000)
 
+            # Attendance records carry only the user id; names live on a separate
+            # table. This is a second round trip, but a cheap one next to the buffer
+            # read (110 users against ~20k records), and pyzk already fetches the
+            # same table internally during get_attendance().
+            #
+            # Never fails the read: a punch with no name is still a punch, and
+            # losing a whole cycle because the name lookup hiccuped would trade
+            # attendance data for a diagnostic nicety.
+            names: dict[str, str] = {}
+            try:
+                for user in self._conn.get_users() or []:
+                    name = str(getattr(user, "name", "") or "").strip()
+                    if name:
+                        names[str(user.user_id).strip()] = name
+            except Exception:
+                logger.warning(
+                    "Could not read the device user table; punches will have no names.",
+                    extra={"device": self._label},
+                    exc_info=True,
+                )
+
             punches: list[RawPunch] = []
             for record in raw:
                 timestamp = getattr(record, "timestamp", None)
@@ -186,6 +207,7 @@ class EsslBiometricDevice(BiometricDevice):
                 punches.append(
                     RawPunch(
                         employee_code=str(record.user_id).strip(),
+                        employee_name=names.get(str(record.user_id).strip()),
                         timestamp=timestamp,
                         status=int(getattr(record, "status", -1)),
                         punch=int(getattr(record, "punch", -1)),

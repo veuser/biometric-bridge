@@ -62,6 +62,7 @@ class TestRequestBody:
             punch_time=datetime(2026, 8, 8, 6, 37, 9, tzinfo=timezone.utc),
             punch_type=PunchType.CHECK_OUT,
             verification_type=VerificationType.UNKNOWN,
+            employee_name="Manoj Settebathula",
             device_serial_number="BJ2C184562186",
             client_record_id="abc123",
         )
@@ -76,6 +77,7 @@ class TestRequestBody:
             "punches": [
                 {
                     "employeeCode": "IQ-1004",
+                    "employeeName": "Manoj Settebathula",
                     "punchTimeUtc": "2026-08-08T06:37:09Z",
                     "punchType": "OUT",
                     "sourceRef": "abc123",
@@ -92,7 +94,7 @@ class TestRequestBody:
         differently — so they disagree either side of midnight.
         """
         record = build_request_body([self._punch()], profile)["punches"][0]
-        assert set(record) == {"employeeCode", "punchTimeUtc", "punchType", "sourceRef"}
+        assert set(record) == {"employeeCode", "employeeName", "punchTimeUtc", "punchType", "sourceRef"}
 
     def test_check_in_maps_to_in(self, profile: HrmsProfile) -> None:
         body = build_request_body([self._punch(punch_type=PunchType.CHECK_IN)], profile)

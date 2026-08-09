@@ -47,10 +47,22 @@ class FakeDevice(BiometricDevice):
     # ── scripting helpers ────────────────────────────────────────────────────
 
     def add_punch(
-        self, employee_code: str, timestamp: datetime, *, status: int = 1, punch: int = 0
+        self,
+        employee_code: str,
+        timestamp: datetime,
+        *,
+        status: int = 1,
+        punch: int = 0,
+        employee_name: str | None = None,
     ) -> None:
         self.buffer.append(
-            RawPunch(employee_code=employee_code, timestamp=timestamp, status=status, punch=punch)
+            RawPunch(
+                employee_code=employee_code,
+                employee_name=employee_name,
+                timestamp=timestamp,
+                status=status,
+                punch=punch,
+            )
         )
 
     def advance_clock(self, delta: timedelta) -> None:

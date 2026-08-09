@@ -209,3 +209,4 @@ def require_sync_prerequisites(db: DbSession, hrms_service: HrmsService) -> None
             "HRMS synchronization is not enabled. Configure it on the HRMS "
             "Configuration page first."
         )
+ 

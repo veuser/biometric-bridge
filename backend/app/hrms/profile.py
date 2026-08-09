@@ -83,6 +83,9 @@ class FieldMap(BaseModel):
     """
 
     employee_code: str = "employeeCode"
+    #: Off by default. A name is duplicate data anywhere the employee is already
+    #: known, so it is only worth sending to an API that does something with it.
+    employee_name: str | None = None
     punch_time: str = "punchTime"
     punch_type: str | None = "punchType"
     verification_type: str | None = "verificationType"

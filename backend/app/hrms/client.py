@@ -303,8 +303,8 @@ class HrmsClient:
                 else:
                     rejected.add(record_id)
                     codes = rejections.setdefault(status or "Rejected", [])
-                    if punch.employee_code not in codes:
-                        codes.append(punch.employee_code)
+                    if punch.label not in codes:
+                        codes.append(punch.label)
                     # Unknown statuses are treated as retryable on purpose. A status
                     # this profile has never seen might be transient, and holding the
                     # watermark is the recoverable mistake — advancing past a record
@@ -317,8 +317,8 @@ class HrmsClient:
             (accepted if ok else rejected).add(record_id)
             if not ok:
                 codes = rejections.setdefault("Rejected", [])
-                if punch.employee_code not in codes:
-                    codes.append(punch.employee_code)
+                if punch.label not in codes:
+                    codes.append(punch.label)
 
         return accepted, rejected, terminal, rejections
 

@@ -27,6 +27,9 @@ CLIENT_RECORD_ID_LENGTH = 32
 @dataclass(frozen=True, slots=True)
 class BiometricPunch:
     employee_code: str
+    #: Only ever used for diagnostics and for the optional name field on the wire.
+    #: HRMS holds the authoritative name against the employee record.
+    employee_name: str | None
     punch_time: datetime  # timezone-aware UTC
     punch_type: PunchType
     verification_type: VerificationType
@@ -35,6 +38,16 @@ class BiometricPunch:
     raw_status: int
     raw_punch: int
     client_record_id: str
+
+    @property
+    def label(self) -> str:
+        """How this person is named in anything an operator reads.
+
+        The code alone is what HRMS matches on, but it is not what a human
+        recognises. "IQ-1004 (Manoj Settebathula)" turns a rejection list into an
+        enrolment list somebody can work through.
+        """
+        return f"{self.employee_code} ({self.employee_name})" if self.employee_name else self.employee_code
 
 
 def make_client_record_id(
@@ -78,6 +91,7 @@ def normalize(
 
     return BiometricPunch(
         employee_code=employee_code,
+        employee_name=(raw.employee_name or None),
         punch_time=punch_time,
         punch_type=decode_punch_type(raw.punch, device_role),
         verification_type=decode_verification(raw.status),

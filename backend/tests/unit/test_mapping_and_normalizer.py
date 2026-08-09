@@ -81,6 +81,7 @@ class TestNormalize:
     def _raw(self, **kw: object) -> RawPunch:
         defaults: dict[str, object] = {
             "employee_code": "IQ-1004",
+            "employee_name": "Manoj Settebathula",
             "timestamp": datetime(2026, 8, 8, 12, 7, 9),
             "status": 1,
             "punch": 1,
@@ -149,9 +150,9 @@ class TestNormalizeMany:
     def test_bad_records_are_counted_not_fatal(self) -> None:
         """One malformed record must not cost the whole window."""
         records = [
-            RawPunch("IQ-1", datetime(2026, 8, 8, 12, 0), 1, 0),
-            RawPunch("", datetime(2026, 8, 8, 12, 1), 1, 0),
-            RawPunch("IQ-2", datetime(2026, 8, 8, 12, 2), 1, 0),
+            RawPunch("IQ-1", None, datetime(2026, 8, 8, 12, 0), 1, 0),
+            RawPunch("", None, datetime(2026, 8, 8, 12, 1), 1, 0),
+            RawPunch("IQ-2", None, datetime(2026, 8, 8, 12, 2), 1, 0),
         ]
         result = normalize_many(
             records, device_id=1, device_role=DeviceRole.CHECK_IN, device_serial="S", tz=IST
@@ -161,7 +162,7 @@ class TestNormalizeMany:
 
     def test_duplicate_records_are_collapsed(self) -> None:
         """Some firmware reports the same punch twice."""
-        record = RawPunch("IQ-1", datetime(2026, 8, 8, 12, 0), 1, 0)
+        record = RawPunch("IQ-1", None, datetime(2026, 8, 8, 12, 0), 1, 0)
         result = normalize_many(
             [record, record, record],
             device_id=1,
@@ -174,8 +175,8 @@ class TestNormalizeMany:
     def test_output_is_sorted_by_time(self) -> None:
         """The watermark is the max punch time, so ordering must be reliable."""
         records = [
-            RawPunch("IQ-2", datetime(2026, 8, 8, 12, 5), 1, 0),
-            RawPunch("IQ-1", datetime(2026, 8, 8, 12, 0), 1, 0),
+            RawPunch("IQ-2", None, datetime(2026, 8, 8, 12, 5), 1, 0),
+            RawPunch("IQ-1", None, datetime(2026, 8, 8, 12, 0), 1, 0),
         ]
         result = normalize_many(
             records, device_id=1, device_role=DeviceRole.CHECK_IN, device_serial="S", tz=IST

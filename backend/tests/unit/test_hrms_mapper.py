@@ -18,6 +18,7 @@ from app.hrms.profile import BatchMode, DateTimeFormat, HrmsProfile
 def make_punch(**overrides: object) -> BiometricPunch:
     defaults: dict[str, object] = {
         "employee_code": "IQ-1004",
+        "employee_name": "Manoj Settebathula",
         "punch_time": datetime(2026, 8, 8, 6, 37, 9, tzinfo=UTC),
         "punch_type": PunchType.CHECK_OUT,
         "verification_type": VerificationType.FINGERPRINT,

@@ -28,6 +28,11 @@ class RawPunch:
     """
 
     employee_code: str
+    #: Enrolment name held on the terminal. Not part of the attendance record —
+    #: the device reports it on a separate user table — so it is carried purely so
+    #: a punch that cannot be attributed can name the person rather than only the
+    #: code. Empty when the terminal has no name for that user.
+    employee_name: str | None
     timestamp: datetime
     status: int
     punch: int

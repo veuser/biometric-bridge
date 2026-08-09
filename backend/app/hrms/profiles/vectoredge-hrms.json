@@ -7,7 +7,10 @@
     "value_template": "{api_key}",
     "query_param": "api_key"
   },
-  "tenant": { "header_name": null, "query_param": null },
+  "tenant": {
+    "header_name": null,
+    "query_param": null
+  },
   "extra_headers": {},
   "batch": {
     "mode": "envelope",
@@ -17,6 +20,7 @@
   },
   "field_map": {
     "employee_code": "employeeCode",
+    "employee_name": "employeeName",
     "punch_time": "punchTimeUtc",
     "punch_type": "punchType",
     "verification_type": null,
@@ -39,7 +43,9 @@
   "datetime_pattern": "%Y-%m-%d %H:%M:%S",
   "output_timezone": "UTC",
   "response": {
-    "success_status_codes": [200],
+    "success_status_codes": [
+      200
+    ],
     "success_path": null,
     "processed_count_path": "inserted",
     "failed_count_path": "failed",
@@ -48,8 +54,17 @@
     "result_id_path": "sourceRef",
     "result_ok_path": null,
     "result_status_path": "status",
-    "result_accepted_statuses": ["Inserted", "Duplicate"],
-    "result_terminal_statuses": ["UnknownEmployee", "Invalid"]
+    "result_accepted_statuses": [
+      "Inserted",
+      "Duplicate"
+    ],
+    "result_terminal_statuses": [
+      "UnknownEmployee",
+      "Invalid"
+    ]
   },
-  "test_connection": { "path": null, "method": "GET" }
+  "test_connection": {
+    "path": null,
+    "method": "GET"
+  }
 }
