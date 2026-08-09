@@ -119,16 +119,43 @@ class SyncRunner:
             try:
                 outcomes.append(self.run_for_device(db, device_record, trigger))
             except BridgeError as exc:
+                # Reported, never dropped. Returning one fewer row than there are
+                # enabled devices makes a skipped device indistinguishable from one
+                # that does not exist — the caller sees a complete-looking result and
+                # a terminal that is quietly not being collected. A device already
+                # holding its lock (scheduler mid-cycle, or a second click) reaches
+                # here on the ordinary path, so this is not a rare branch.
                 logger.warning(
                     "Skipping device.",
                     extra={"device_id": device_record.id, "error": exc.message},
                 )
-            except Exception:
+                outcomes.append(self._skipped(device_record.id, exc.message))
+            except Exception as exc:
                 logger.exception(
                     "Unexpected error syncing device.",
                     extra={"device_id": device_record.id},
                 )
+                # Type name only: an unexpected exception's message can carry
+                # connection strings or paths, and this one is rendered in the portal.
+                outcomes.append(
+                    self._skipped(device_record.id, f"Unexpected error: {type(exc).__name__}")
+                )
         return outcomes
+
+    @staticmethod
+    def _skipped(device_id: int, reason: str) -> SyncOutcome:
+        """An outcome for a device that was never attempted.
+
+        ``run_id`` is 0 because no ``sync_runs`` row exists — nothing ran. Sync History
+        is a record of executions and must not gain phantom entries for work that did
+        not happen; this exists only so the immediate result accounts for every device.
+        """
+        return SyncOutcome(
+            run_id=0,
+            device_id=device_id,
+            status=SyncStatus.SKIPPED,
+            error_message=reason,
+        )
 
 
 def _validate_manual_window(

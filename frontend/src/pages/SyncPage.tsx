@@ -94,7 +94,9 @@ export default function SyncPage() {
             </thead>
             <tbody>
               {result.map((outcome) => (
-                <tr key={outcome.run_id}>
+                // Keyed by device, not run_id: a device that was skipped has no run,
+                // and several such rows would all carry run_id 0 and collide.
+                <tr key={outcome.device_id}>
                   <td>
                     {devices.data?.find((d) => d.id === outcome.device_id)?.name ??
                       outcome.device_id}
@@ -102,12 +104,23 @@ export default function SyncPage() {
                   <td>
                     <StatusBadge status={outcome.status} />
                   </td>
-                  <td>{outcome.buffer_records}</td>
-                  <td>{outcome.window_records}</td>
-                  <td>{outcome.records_sent}</td>
-                  <td>{outcome.records_success}</td>
-                  <td>{outcome.records_failed}</td>
-                  <td>{outcome.records_suppressed}</td>
+                  {outcome.status === 'SKIPPED' ? (
+                    // Counts would all read 0 and look like "read nothing, sent
+                    // nothing" — a successful-looking idle run. Nothing was attempted,
+                    // so say why instead of showing six zeroes.
+                    <td colSpan={6} className="text-muted small">
+                      {outcome.error_message ?? 'Not attempted.'}
+                    </td>
+                  ) : (
+                    <>
+                      <td>{outcome.buffer_records}</td>
+                      <td>{outcome.window_records}</td>
+                      <td>{outcome.records_sent}</td>
+                      <td>{outcome.records_success}</td>
+                      <td>{outcome.records_failed}</td>
+                      <td>{outcome.records_suppressed}</td>
+                    </>
+                  )}
                 </tr>
               ))}
               {result.length === 0 && (

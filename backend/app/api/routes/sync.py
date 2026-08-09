@@ -115,7 +115,7 @@ def sync_status(db: Db, _session: CurrentSession) -> SyncStatusResponse:
                 last_status=state.last_status if state else None,
                 last_error=state.last_error if state else None,
                 clock_offset_seconds=state.clock_offset_seconds if state else None,
-                clock_warning=clock_warning(state.clock_offset_seconds) if state else None,
+                clock_warning=clock_warning(state.clock_offset_seconds, device.name) if state else None,
                 is_running=bool(state and state.locked_at is not None),
             )
         )

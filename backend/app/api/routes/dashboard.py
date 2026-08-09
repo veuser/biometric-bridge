@@ -80,10 +80,15 @@ def dashboard(request: Request, db: Db, _session: CurrentSession) -> DashboardRe
         select(func.count()).select_from(Device).where(Device.enabled.is_(True))
     ).scalar_one()
 
+    # Names come from one query rather than a lazy load per state: these warnings are
+    # rendered as a stack, and without the device name two terminals produce sentences
+    # that differ only by a number.
+    device_names = dict(db.execute(select(Device.id, Device.name)).all())
+
     warnings: list[str] = []
     clock_warnings = 0
     for state in states:
-        warning = clock_warning(state.clock_offset_seconds)
+        warning = clock_warning(state.clock_offset_seconds, device_names.get(state.device_id))
         if warning:
             clock_warnings += 1
             warnings.append(warning)

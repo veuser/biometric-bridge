@@ -85,6 +85,11 @@ class SyncStatus(StrEnum):
     TIMEOUT = "TIMEOUT"
     INTERRUPTED = "INTERRUPTED"
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
+    #: The device was not attempted at all — most often because a sync was already
+    #: running on it. No run row exists, so this never appears in Sync History; it
+    #: exists so a "sync all devices" result can account for every enabled device
+    #: rather than quietly returning one fewer row than there are devices.
+    SKIPPED = "SKIPPED"
 
     @property
     def is_terminal(self) -> bool:

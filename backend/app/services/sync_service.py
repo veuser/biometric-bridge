@@ -280,6 +280,7 @@ class SyncService:
         accepted: list[BiometricPunch] = []
         rejected: list[BiometricPunch] = []
         terminal_ids: set[str] = set()
+        rejections: dict[str, list[str]] = {}
         sent = 0
 
         def push_one(b: list[BiometricPunch]) -> PushResult:
@@ -296,6 +297,9 @@ class SyncService:
             accepted.extend(batch_accepted)
             rejected.extend(batch_rejected)
             terminal_ids |= result.terminal_ids
+            for status, codes in result.rejections.items():
+                merged = rejections.setdefault(status, [])
+                merged.extend(c for c in codes if c not in merged)
 
         run.hrms_ms = int((time.monotonic() - started) * 1000)
         run.records_sent = sent
@@ -310,7 +314,9 @@ class SyncService:
             watermark = _safe_watermark(accepted, rejected, terminal_ids)
 
         status = SyncStatus.PARTIAL if rejected else SyncStatus.SUCCESS
-        return self._finish_ok(db, run, state, status, watermark=watermark)
+        return self._finish_ok(
+            db, run, state, status, watermark=watermark, detail=_describe(rejections)
+        )
 
     # ── window and clock ─────────────────────────────────────────────────────
 
@@ -393,14 +399,18 @@ class SyncService:
         status: SyncStatus,
         *,
         watermark: datetime | None,
+        detail: str | None = None,
     ) -> SyncOutcome:
         now = utcnow()
         run.status = status
         run.completed_at = now
+        # A PARTIAL run that records no reason is the failure this closes: the counts
+        # say 175 failed and nothing anywhere says why, or for whom.
+        run.error_message = detail
 
         state.last_status = status
         state.last_sync_completed_at = now
-        state.last_error = None
+        state.last_error = detail
 
         if watermark is not None:
             # Never move the watermark backwards: a manual catch-up or an
@@ -431,7 +441,7 @@ class SyncService:
                 else None,
             },
         )
-        return _outcome(run, status, watermark)
+        return _outcome(run, status, watermark, error=detail)
 
     def _finish_failed(
         self,
@@ -538,3 +548,22 @@ def _outcome(
         watermark_advanced_to=watermark,
         error_message=error,
     )
+
+
+def _describe(rejections: dict[str, list[str]]) -> str | None:
+    """Turn per-record rejections into one line an operator can act on.
+
+    Names the employees rather than only counting them, because the fix for the
+    common case — a code the terminal knows and HRMS does not — is an enrolment task
+    that cannot start until somebody knows which code. Truncated so a whole shift of
+    unenrolled staff cannot produce an unreadable wall of text.
+    """
+    if not rejections:
+        return None
+
+    parts: list[str] = []
+    for status, codes in sorted(rejections.items()):
+        shown = ", ".join(codes[:8])
+        more = f" +{len(codes) - 8} more" if len(codes) > 8 else ""
+        parts.append(f"{status}: {shown}{more}")
+    return " · ".join(parts)

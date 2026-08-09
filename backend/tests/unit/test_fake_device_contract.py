@@ -82,3 +82,33 @@ def test_clock_can_be_advanced_and_rewound() -> None:
     assert device.device_time == datetime(2026, 8, 8, 12, 5)
     device.advance_clock(timedelta(minutes=-30))
     assert device.device_time == datetime(2026, 8, 8, 11, 35)
+
+
+class TestErrorTranslation:
+    """A refused command and a refused credential are different problems."""
+
+    def test_an_auth_failure_names_the_comm_key_and_the_blank_case(self) -> None:
+        from zk.exception import ZKErrorResponse
+
+        from app.biometric.essl_client import _translate
+        from app.core.errors import DeviceConfigurationError
+
+        translated = _translate(ZKErrorResponse("Unauthenticated"), "Entry", "10.0.0.1", 4370)
+
+        assert isinstance(translated, DeviceConfigurationError)
+        assert "communication key" in translated.message
+        # The observed cause was a key typed in for a device that has none, so the
+        # message has to say that leaving it blank is a valid answer.
+        assert "blank" in translated.message
+
+    def test_a_non_auth_refusal_carries_the_device_reason_instead(self) -> None:
+        """Regression: every ZKErrorResponse used to blame the comm key, which pointed
+        the operator at a setting that was already correct."""
+        from zk.exception import ZKErrorResponse
+
+        from app.biometric.essl_client import _translate
+
+        translated = _translate(ZKErrorResponse("Invalid response"), "Entry", "10.0.0.1", 4370)
+
+        assert "Invalid response" in translated.message
+        assert "communication key" not in translated.message

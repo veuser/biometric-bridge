@@ -285,9 +285,21 @@ def _translate(exc: Exception, label: str, ip: str, port: int) -> Exception:
         return DeviceTimeoutError(f"{label} did not respond within the timeout.")
 
     if isinstance(exc, ZKErrorResponse):
-        # The device answered but rejected the command — most often a wrong comm key.
+        # The device answered and refused. pyzk raises this for authentication failure
+        # AND for any command the firmware rejects, so the two are separated here:
+        # blaming the comm key for an unrelated refusal sends an operator to change a
+        # setting that was already correct.
+        detail = str(exc).strip()
+        if "unauth" in detail.lower():
+            return DeviceConfigurationError(
+                f"{label} rejected the communication key. If the terminal has no comm "
+                "key set, leave the field blank — a value here must match the device "
+                "exactly, and a wrong one fails the same way as a missing one."
+            )
+        # Carry the device's own words. They are the only clue to a refusal that is not
+        # about authentication, and they were previously discarded.
         return DeviceConfigurationError(
-            f"{label} rejected the request. Check the device communication key."
+            f"{label} rejected the request ({detail or 'no reason given'})."
         )
 
     if isinstance(exc, ZKNetworkError | ZKErrorConnection | ConnectionError | OSError):

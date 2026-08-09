@@ -86,7 +86,15 @@ class DeviceService:
         # An omitted comm_key means "leave it alone", not "clear it" — otherwise
         # every edit through the portal would silently wipe the key, since the form
         # cannot pre-fill a write-only field.
-        if payload.comm_key:
+        #
+        # Which is exactly why removal needs its own flag. Most ZK terminals ship with
+        # no comm key at all, so a value typed in by mistake breaks every sync with
+        # "rejected the communication key" — and the field an operator would clear to
+        # fix it is the one that means "keep". The flag is the only way out that does
+        # not involve editing the database.
+        if payload.clear_comm_key:
+            device.comm_key_protected = None
+        elif payload.comm_key:
             device.comm_key_protected = self._protector.protect(payload.comm_key)
 
         try:
@@ -117,19 +125,30 @@ class DeviceService:
         return device
 
 
-def clock_warning(offset_seconds: float | None) -> str | None:
+def clock_warning(offset_seconds: float | None, device_name: str | None = None) -> str | None:
     """Human-readable warning when a device clock has drifted too far.
 
     The bridge never corrects a device clock — that is an operator action on the
     terminal — but it must say so loudly, because drift silently shifts every punch
     it reports.
+
+    ``device_name`` is included when the caller knows it, because these warnings are
+    rendered as a stack on the dashboard: with two terminals they read as near-identical
+    sentences differing only by a number, and with five across sites there is nothing to
+    tell the operator which terminal to go and fix. A warning that does not name its
+    subject is an alert someone has to do detective work on.
     """
     if offset_seconds is None:
         return None
     if abs(offset_seconds) <= CLOCK_DRIFT_WARNING_SECONDS:
         return None
     direction = "ahead of" if offset_seconds > 0 else "behind"
+    subject = f"{device_name} clock" if device_name else "Device clock"
     return (
-        f"Device clock is {abs(offset_seconds):.0f} seconds {direction} this server. "
-        "Punch times will be recorded with that offset until the device clock is corrected."
+        f"{subject} is {abs(offset_seconds):.0f} seconds {direction} this server. "
+        "Every punch is recorded with that offset, and one made within "
+        f"{abs(offset_seconds):.0f} seconds of midnight will be filed on the wrong "
+        "day — attendance is grouped by date, so a shifted punch lands on a different "
+        "day's record and stops pairing with its check-in or check-out. Correct the "
+        "clock on the terminal; the bridge will not adjust it."
     )

@@ -25,6 +25,8 @@ type FormState = {
   timezone: string
   enabled: boolean
   comm_key: string
+  /** Explicit removal of a stored key; blank cannot express it (blank = keep). */
+  clear_comm_key: boolean
 }
 
 const BLANK: FormState = {
@@ -39,6 +41,7 @@ const BLANK: FormState = {
   timezone: '',
   enabled: true,
   comm_key: '',
+  clear_comm_key: false,
 }
 
 /** Empty strings mean "not set"; sending them would fail validation. */
@@ -49,7 +52,9 @@ function toPayload(form: FormState) {
     serial_number: form.serial_number || null,
     timezone: form.timezone || null,
     // Omitted rather than empty: an empty key must not wipe the stored one.
+    // Removal travels as its own flag, so it can never happen by accident.
     comm_key: form.comm_key || null,
+    clear_comm_key: form.clear_comm_key,
   }
 }
 
@@ -104,7 +109,7 @@ export default function DevicesPage() {
         ip_address: form.ip_address,
         port: form.port,
         timeout_seconds: form.timeout_seconds,
-        comm_key: form.comm_key || null,
+        comm_key: form.clear_comm_key ? null : form.comm_key || null,
         force_udp: form.force_udp,
         name: form.name || 'device',
       }),
@@ -139,6 +144,7 @@ export default function DevicesPage() {
       enabled: device.enabled,
       // Never pre-filled: the API does not return it, by design.
       comm_key: '',
+      clear_comm_key: false,
     })
     setTestResult(null)
     setShowForm(true)
@@ -348,15 +354,35 @@ export default function DevicesPage() {
               </Col>
 
               <Col md={6}>
-                <Form.Group>
+                <Form.Group controlId="device-comm-key">
                   <Form.Label>Communication key</Form.Label>
                   <Form.Control
                     type="password"
                     value={form.comm_key}
                     onChange={(e) => setForm({ ...form, comm_key: e.target.value })}
+                    disabled={form.clear_comm_key}
                     placeholder={editing?.comm_key_set ? 'Stored — leave blank to keep' : 'Optional'}
                   />
-                  <Form.Text muted>Numeric. Leave blank to keep the existing key.</Form.Text>
+                  <Form.Text muted>
+                    Numeric. Most terminals have no key — leave this blank unless one was
+                    set on the device itself. A wrong value fails exactly like a missing
+                    one.
+                  </Form.Text>
+                  {editing?.comm_key_set && (
+                    // Without this there is no way back: the field is write-only, so
+                    // blank means "keep", and a key typed in by mistake would break
+                    // every sync with no portal-side remedy.
+                    <Form.Check
+                      className="mt-2"
+                      type="checkbox"
+                      id="device-clear-comm-key"
+                      label="Remove the stored key (the device has none)"
+                      checked={form.clear_comm_key}
+                      onChange={(e) =>
+                        setForm({ ...form, clear_comm_key: e.target.checked, comm_key: '' })
+                      }
+                    />
+                  )}
                 </Form.Group>
               </Col>
               <Col md={6}>

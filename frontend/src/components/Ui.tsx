@@ -9,7 +9,11 @@ export function StatusBadge({ status }: { status: string | null | undefined }) {
       ? 'success'
       : status === 'NO_RECORDS'
         ? 'secondary'
-        : status === 'PARTIAL'
+        : // SKIPPED is not a failure — nothing was attempted, usually because a sync
+          // was already running. Red would put it alongside genuine errors; grey would
+          // let it pass as routine, when the operator asked for a sync and did not get
+          // one on that device.
+          status === 'PARTIAL' || status === 'SKIPPED'
           ? 'warning'
           : status === 'RUNNING'
             ? 'info'

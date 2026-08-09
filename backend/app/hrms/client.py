@@ -50,6 +50,12 @@ class PushResult:
     #: watermark is allowed past them. A rejection that is NOT in this set is treated
     #: as possibly transient and does hold the watermark back.
     terminal_ids: set[str] = field(default_factory=set)
+    #: Why records were refused, as ``status -> employee codes``. Without this a run
+    #: reports "175 failed" and nothing else: the per-record reasons arrive in the
+    #: response, are used to classify the records, and were then discarded — leaving
+    #: the one question an operator actually has ("failed why, and for whom?")
+    #: answerable only by replaying the batch by hand.
+    rejections: dict[str, list[str]] = field(default_factory=dict)
     error_message: str | None = None
     duration_ms: int = 0
 
@@ -190,6 +196,17 @@ class HrmsClient:
             )
         if code == 429 or code >= 500:
             raise HrmsUnavailableError(f"HRMS is unavailable (HTTP {code}).")
+        if code == 404:
+            # A 404 is an addressing problem, not a payload problem, and it is the most
+            # likely first failure after configuring HRMS: wrong base URL, wrong port,
+            # or a path that does not exist on whatever is listening there. The default
+            # branch below would answer it by pasting the server's HTML error page into
+            # the portal, which tells an operator nothing about what to change.
+            raise HrmsBadRequestError(
+                f"HRMS returned 404 for {self._base_url}{self._profile.attendance_path}. "
+                "Nothing is serving that path — check the base URL and port on the HRMS "
+                "Configuration page, and that the attendance endpoint exists on that host."
+            )
         if code >= 400:
             raise HrmsBadRequestError(
                 f"HRMS rejected the request (HTTP {code}): {_short_body(response)}"
@@ -208,7 +225,7 @@ class HrmsClient:
                 message = resolve_path(payload, config.error_message_path) or "no reason given"
                 raise HrmsBadRequestError(f"HRMS reported a failure: {message}")
 
-        accepted, rejected, terminal = self._per_record_results(payload, punches)
+        accepted, rejected, terminal, rejections = self._per_record_results(payload, punches)
 
         processed = _as_int(resolve_path(payload, config.processed_count_path))
         failed = _as_int(resolve_path(payload, config.failed_count_path))
@@ -234,13 +251,14 @@ class HrmsClient:
             accepted_ids=accepted,
             rejected_ids=rejected,
             terminal_ids=terminal,
+            rejections=rejections,
             error_message=resolve_path(payload, config.error_message_path),
             duration_ms=duration_ms,
         )
 
     def _per_record_results(
         self, payload: Any, punches: list[BiometricPunch]
-    ) -> tuple[set[str], set[str], set[str]]:
+    ) -> tuple[set[str], set[str], set[str], dict[str, list[str]]]:
         """Read a per-record result array, if the profile declares one.
 
         This is what makes PARTIAL reachable. Without it the batch is all-or-nothing
@@ -253,11 +271,11 @@ class HrmsClient:
         """
         config = self._profile.response
         if not config.results_path or not config.result_id_path:
-            return set(), set(), set()
+            return set(), set(), set(), {}
 
         results = resolve_path(payload, config.results_path)
         if not isinstance(results, list):
-            return set(), set(), set()
+            return set(), set(), set(), {}
 
         by_id = {p.client_record_id: p for p in punches}
         # Fall back to employee code when the profile does not send our record id.
@@ -266,6 +284,7 @@ class HrmsClient:
         accepted: set[str] = set()
         rejected: set[str] = set()
         terminal: set[str] = set()
+        rejections: dict[str, list[str]] = {}
 
         for entry in results:
             identifier = resolve_path(entry, config.result_id_path)
@@ -283,6 +302,9 @@ class HrmsClient:
                     accepted.add(record_id)
                 else:
                     rejected.add(record_id)
+                    codes = rejections.setdefault(status or "Rejected", [])
+                    if punch.employee_code not in codes:
+                        codes.append(punch.employee_code)
                     # Unknown statuses are treated as retryable on purpose. A status
                     # this profile has never seen might be transient, and holding the
                     # watermark is the recoverable mistake — advancing past a record
@@ -293,8 +315,12 @@ class HrmsClient:
 
             ok = resolve_path(entry, config.result_ok_path) if config.result_ok_path else True
             (accepted if ok else rejected).add(record_id)
+            if not ok:
+                codes = rejections.setdefault("Rejected", [])
+                if punch.employee_code not in codes:
+                    codes.append(punch.employee_code)
 
-        return accepted, rejected, terminal
+        return accepted, rejected, terminal, rejections
 
 
 def _safe_json(response: httpx.Response) -> Any:

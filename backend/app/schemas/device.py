@@ -76,7 +76,18 @@ class DeviceCreate(DeviceBase):
 
 
 class DeviceUpdate(DeviceCreate):
-    pass
+    #: Explicitly remove a stored communication key.
+    #:
+    #: A write-only field cannot express "delete" by being left empty, because empty
+    #: already means "keep what is stored" — the form has nothing to pre-fill it with.
+    #: Without this flag a key entered by mistake could only be removed by editing the
+    #: database: every sync would fail with "rejected the communication key" and the
+    #: portal would offer no way out, because the field an operator would naturally
+    #: clear is the one that means "leave it alone".
+    #:
+    #: Separate from ``comm_key`` rather than overloading empty-string, so the intent
+    #: is unambiguous in the request and cannot be triggered by an accidental blank.
+    clear_comm_key: bool = False
 
 
 class DeviceResponse(DeviceBase):
