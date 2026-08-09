@@ -152,7 +152,12 @@ def dashboard(request: Request, db: Db, _session: CurrentSession) -> DashboardRe
             running=sum(1 for s in states if s.locked_at is not None),
         ),
         hrms=HrmsSummary(
-            configured=config is not None,
+            # "Configured" means there is somewhere to send and something to send with —
+            # NOT merely that a row exists. Since the contract profile is now seeded on
+            # first run, a row exists from the moment the service starts, and a
+            # row-existence test would report a brand-new install as configured. A green
+            # dashboard on a bridge that has never been pointed at anything is a lie.
+            configured=bool(config and config.base_url and config.api_key_protected),
             enabled=bool(config and config.enabled),
             profile_configured=profile_configured,
             api_key_set=bool(config and config.api_key_protected),

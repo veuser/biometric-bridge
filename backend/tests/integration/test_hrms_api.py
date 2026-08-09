@@ -30,8 +30,28 @@ def admin(client: TestClient) -> TestClient:
 
 
 class TestConfigLifecycle:
-    def test_unconfigured_returns_404(self, admin: TestClient) -> None:
-        assert admin.get("/api/hrms/config").status_code == 404
+    def test_a_fresh_install_is_pre_loaded_with_the_shipped_contract(
+        self, admin: TestClient
+    ) -> None:
+        """Replaces an earlier test that expected 404 on an unconfigured bridge.
+
+        There is no "no row" state any more: startup seeds the configuration row with
+        the shipped HRMS profile, so the page opens with the contract already filled in
+        and only the base URL and API key left to enter. That removes ~50 lines of JSON
+        an operator would otherwise have to transcribe by hand.
+
+        What must stay true is that seeding a *contract* does not amount to being
+        configured — there is still no destination and no credential.
+        """
+        response = admin.get("/api/hrms/config")
+        assert response.status_code == 200
+
+        body = response.json()
+        assert body["profile"]["attendance_path"] == "/api/v1/attendence/biometric"
+        assert body["profile_configured"] is True
+        assert body["base_url"] == ""
+        assert body["api_key_set"] is False
+        assert body["enabled"] is False
 
     def test_save_and_read_back(self, admin: TestClient) -> None:
         assert admin.put("/api/hrms/config", json=CONFIG).status_code == 200
@@ -146,9 +166,15 @@ class TestGuards:
 
 class TestTestConnection:
     def test_reports_unconfigured_rather_than_failing(self, admin: TestClient) -> None:
+        """Still an operator-readable refusal, not an exception.
+
+        The message is now more specific than it was before the profile was seeded:
+        the missing piece is the API key, not the whole configuration, so that is what
+        it names.
+        """
         body = admin.post("/api/hrms/test-connection").json()
         assert body["reachable"] is False
-        assert "not been configured" in body["message"]
+        assert "API key" in body["message"]
 
     def test_without_a_probe_endpoint_it_refuses_to_send_fake_data(
         self, admin: TestClient

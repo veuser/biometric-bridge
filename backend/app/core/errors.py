@@ -110,7 +110,15 @@ class HrmsBadRequestError(HrmsError):
 
 
 class HrmsNotConfiguredError(HrmsError):
-    status = SyncStatus.DEVICE_CONFIGURATION_ERROR
+    """No destination, no credential, or sync disabled.
+
+    Reported as ``HRMS_NOT_CONFIGURED``, not ``DEVICE_CONFIGURATION_ERROR``. It used to
+    carry the device status, which meant a perfectly healthy terminal was blamed for a
+    missing API key and the operator was pointed at the Devices page to debug hardware
+    that was working. The status is the only part of a failed run most people read.
+    """
+
+    status = SyncStatus.HRMS_NOT_CONFIGURED
     retryable = False
 
 

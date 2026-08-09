@@ -77,6 +77,10 @@ class SyncStatus(StrEnum):
     HRMS_UNAVAILABLE = "HRMS_UNAVAILABLE"
     HRMS_AUTHENTICATION_FAILED = "HRMS_AUTHENTICATION_FAILED"
     HRMS_BAD_REQUEST = "HRMS_BAD_REQUEST"
+    #: Nowhere to send: no base URL, no API key, or sync not enabled. Distinct from the
+    #: DEVICE_* statuses because the fix is on the HRMS page and the terminal is fine —
+    #: reporting it as a device error sends an operator to debug hardware that works.
+    HRMS_NOT_CONFIGURED = "HRMS_NOT_CONFIGURED"
     INVALID_RECORD = "INVALID_RECORD"
     TIMEOUT = "TIMEOUT"
     INTERRUPTED = "INTERRUPTED"

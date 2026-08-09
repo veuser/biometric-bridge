@@ -107,6 +107,7 @@ class SyncService:
         trigger: SyncTrigger,
         manual_from: datetime | None = None,
         manual_to: datetime | None = None,
+        hrms_error: str | None = None,
     ) -> SyncOutcome:
         """Execute one sync. Assumes the caller already holds the device lock."""
         state = self._get_state(db, device_record.id)
@@ -133,6 +134,7 @@ class SyncService:
                 trigger=trigger,
                 manual_from=manual_from,
                 manual_to=manual_to,
+                hrms_error=hrms_error,
             )
         except BridgeError as exc:
             return self._finish_failed(db, run, state, exc.status, exc.message)
@@ -165,6 +167,7 @@ class SyncService:
         trigger: SyncTrigger,
         manual_from: datetime | None,
         manual_to: datetime | None,
+        hrms_error: str | None = None,
     ) -> SyncOutcome:
         tz = ZoneInfo(device_record.timezone or settings.timezone)
 
@@ -235,8 +238,15 @@ class SyncService:
             return self._finish_ok(db, run, state, SyncStatus.NO_RECORDS, watermark=None)
 
         if hrms_client is None or not api_key:
+            # hrms_error carries the SPECIFIC reason the client could not be built —
+            # no API key, an unusable profile — which the runner otherwise only writes
+            # to the log file. Without it the operator reads a generic "not configured"
+            # and has to go digging for which of four things is missing.
             raise HrmsNotConfiguredError(
-                "HRMS is not configured, so there is nowhere to send these punches."
+                hrms_error
+                or "HRMS is not configured, so there is nowhere to send these punches. "
+                "Set the base URL and API key on the HRMS Configuration page, then tick "
+                "'Enable synchronization to HRMS'."
             )
 
         return self._push(

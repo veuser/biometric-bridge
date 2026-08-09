@@ -66,13 +66,26 @@ class SyncRunner:
             hrms_client = None
             api_key = None
             tenant = None
+            hrms_error = None
             config = self.hrms_service.get_config(db)
-            if config is not None and config.enabled:
+            if config is None or not config.enabled:
+                hrms_error = (
+                    "HRMS synchronization is switched off, so there is nowhere to send "
+                    "these punches. Tick 'Enable synchronization to HRMS' on the HRMS "
+                    "Configuration page."
+                )
+            else:
                 try:
                     api_key = self.hrms_service.reveal_api_key(config)
                     hrms_client = self.hrms_service.build_client(config)
                     tenant = config.tenant_identifier
                 except BridgeError as exc:
+                    # Swallowed on purpose: a run that read no punches should still
+                    # succeed as NO_RECORDS rather than fail over a destination it never
+                    # needed. But if there ARE punches, the engine raises — and it needs
+                    # this reason to say which piece is missing instead of a generic
+                    # "not configured".
+                    hrms_error = exc.message
                     logger.warning(
                         "HRMS is configured but unusable.", extra={"error": exc.message}
                     )
@@ -84,6 +97,7 @@ class SyncRunner:
                 hrms_client=hrms_client,
                 api_key=api_key,
                 tenant=tenant,
+                hrms_error=hrms_error,
                 settings=settings,
                 trigger=trigger,
                 manual_from=manual_from,

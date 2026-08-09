@@ -118,6 +118,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Redaction state is per-process: without this the stored HRMS key would be
         # unprotected in the log until someone next saved the configuration.
         with db.session() as boot_session:
+            # Before register_existing_secret: on a brand-new database this creates the
+            # config row, so the HRMS page opens with the contract already filled in and
+            # only the base URL and API key left to enter.
+            HrmsService().seed_default_config(boot_session)
             HrmsService().register_existing_secret(boot_session)
             # A run left RUNNING by a killed process would otherwise sit in the
             # history forever and make the dashboard claim a sync is in progress.

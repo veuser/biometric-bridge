@@ -11,6 +11,7 @@ it. That redaction is load-bearing, because encryption at rest is currently off
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -27,6 +28,34 @@ logger = get_logger(__name__)
 #: The configuration is a singleton row; there is one HRMS.
 CONFIG_ID = 1
 
+#: Profile seeded into a brand-new database. Bundled by PyInstaller (see the
+#: ``app/hrms/profiles`` entry in ``biometric_bridge.spec``), so this resolves in a
+#: frozen build as well as from source.
+SHIPPED_PROFILE_PATH = Path(__file__).resolve().parent.parent / "hrms" / "profiles" / "vectoredge-hrms.json"
+
+
+def load_shipped_profile() -> HrmsProfile:
+    """The VectorEdge HRMS contract, or the placeholder template if it cannot be read.
+
+    Seeding a real contract is not the same as *guessing* one — the endpoint this
+    describes was built alongside the bridge, so both ends of it are ours. The
+    placeholder in :meth:`HrmsProfile.default` still exists for the case it was written
+    for: an unknown HRMS, where the bridge must refuse to invent a path.
+
+    Falls back rather than raising, because a missing or corrupt profile file must not
+    stop the service from starting. The operator can still paste a profile into the
+    portal, which is exactly the state a fresh install used to be in.
+    """
+    try:
+        return HrmsProfile.model_validate(json.loads(SHIPPED_PROFILE_PATH.read_text(encoding="utf-8")))
+    except (OSError, ValueError) as exc:
+        logger.warning(
+            "Could not load the shipped HRMS profile; falling back to the placeholder "
+            "template. Configure the profile on the HRMS page.",
+            extra={"path": str(SHIPPED_PROFILE_PATH), "error": str(exc)},
+        )
+        return HrmsProfile.default()
+
 
 class HrmsService:
     def __init__(self, protector: SecretProtector | None = None) -> None:
@@ -42,6 +71,40 @@ class HrmsService:
         if config is None:
             raise HrmsNotConfiguredError("HRMS has not been configured yet.")
         return config
+
+    def seed_default_config(self, db: DbSession) -> None:
+        """Create the singleton row on first run, pre-loaded with the shipped profile.
+
+        Without this a fresh install opens the HRMS page with an empty profile box and
+        the operator has to paste ~50 lines of JSON correctly before anything works —
+        a step that is pure transcription risk, since the contract is fixed and known.
+        Seeding leaves exactly two fields to fill in: the base URL and the API key.
+
+        Deliberately does NOT enable sync. The row is created disabled and with no
+        credential, so seeding cannot cause the bridge to start pushing to somewhere
+        it was never pointed at. The existing guards still apply: a base URL and a key
+        are both required before the enable checkbox is accepted.
+
+        No-ops when a row already exists, so an upgrade never overwrites a profile an
+        operator has edited.
+        """
+        if self.get_config(db) is not None:
+            return
+
+        profile = load_shipped_profile()
+        db.add(
+            HrmsConnection(
+                id=CONFIG_ID,
+                base_url="",
+                enabled=False,
+                profile_json=profile.model_dump_json(),
+            )
+        )
+        db.flush()
+        logger.info(
+            "Seeded the HRMS configuration row with the shipped profile.",
+            extra={"attendance_path": profile.attendance_path},
+        )
 
     def save_config(
         self,
