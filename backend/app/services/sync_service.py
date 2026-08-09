@@ -269,6 +269,7 @@ class SyncService:
         started = time.monotonic()
         accepted: list[BiometricPunch] = []
         rejected: list[BiometricPunch] = []
+        terminal_ids: set[str] = set()
         sent = 0
 
         def push_one(b: list[BiometricPunch]) -> PushResult:
@@ -284,6 +285,7 @@ class SyncService:
             batch_accepted, batch_rejected = _split_batch(batch, result)
             accepted.extend(batch_accepted)
             rejected.extend(batch_rejected)
+            terminal_ids |= result.terminal_ids
 
         run.hrms_ms = int((time.monotonic() - started) * 1000)
         run.records_sent = sent
@@ -295,7 +297,7 @@ class SyncService:
 
         watermark = None
         if trigger.advances_watermark:
-            watermark = _safe_watermark(accepted, rejected)
+            watermark = _safe_watermark(accepted, rejected, terminal_ids)
 
         status = SyncStatus.PARTIAL if rejected else SyncStatus.SUCCESS
         return self._finish_ok(db, run, state, status, watermark=watermark)
@@ -469,24 +471,42 @@ def _split_batch(
 
 
 def _safe_watermark(
-    accepted: list[BiometricPunch], rejected: list[BiometricPunch]
+    accepted: list[BiometricPunch],
+    rejected: list[BiometricPunch],
+    terminal_ids: set[str] | None = None,
 ) -> datetime | None:
-    """The watermark to advance to, honouring the contiguous-prefix rule.
+    """The watermark to advance to.
 
     With nothing rejected, the maximum accepted punch time is safe.
 
-    With rejections, advancing past a rejected record would strand it behind the
-    watermark permanently — it would never be read again. So the watermark may move
-    only if every rejected record is *later* than every accepted one; otherwise it
-    does not move at all and the window is retried in full.
+    A rejection HRMS may yet accept on a retry blocks the watermark: advancing past
+    it would strand the record behind the cursor and it would never be read again. So
+    the watermark may move only if every such rejection is *later* than every accepted
+    record — the contiguous-prefix rule.
+
+    **A rejection HRMS has refused finally does not block it.** "No employee has that
+    code" is an answer, not a failure to answer, and retrying cannot change it. Under
+    the prefix rule alone, one unenrolled employee would pin the watermark forever:
+    every cycle would re-read an ever-widening window, re-send everything in it, fail
+    on the same record, and strand every later punch behind it. The rejection is still
+    counted and reported — it becomes a visible enrolment task rather than a silent
+    stall.
+
+    Terminal rejections are excluded from the blocking set but are deliberately *not*
+    treated as accepted, so they never raise the watermark on their own.
     """
     if not accepted:
         return None
+
     max_accepted = max(p.punch_time for p in accepted)
-    if not rejected:
+
+    terminal_ids = terminal_ids or set()
+    blocking = [p for p in rejected if p.client_record_id not in terminal_ids]
+    if not blocking:
         return max_accepted
-    earliest_rejected = min(p.punch_time for p in rejected)
-    if earliest_rejected > max_accepted:
+
+    earliest_blocking = min(p.punch_time for p in blocking)
+    if earliest_blocking > max_accepted:
         return max_accepted
     return None
 

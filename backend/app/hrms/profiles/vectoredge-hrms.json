@@ -1,0 +1,93 @@
+{
+  "_comment": [
+    "The VectorEdge HRMS biometric ingestion contract, as built on the HRMS side in",
+    "HRMS.Api/Controllers/Attendence/BiometricAttendanceController.cs.",
+    "",
+    "Unlike default.json this is NOT a template: it is a real, working contract, so",
+    "attendance_path is populated and the bridge will enable sync with it as-is.",
+    "Load it on the HRMS Configuration page, set the base URL and the API key, and",
+    "nothing else needs changing.",
+    "",
+    "Two things the bridge deliberately does NOT send:",
+    "  * verification_type — EmpAttendanceLogs has no column for it, and 81% of",
+    "    observed punches report status=4, whose meaning is not settled between the",
+    "    two firmware families in use. A guessed label in an attendance ledger is",
+    "    worse than no label.",
+    "  * a date, an hour, a minute or a second — only the UTC instant. HRMS derives",
+    "    the attendance day and the wall clock from it using the tenant timezone.",
+    "    Web check-in does the opposite (the browser supplies both) and that is why",
+    "    its write path and read path disagree either side of midnight."
+  ],
+
+  "attendance_path": "/api/v1/attendence/biometric",
+  "method": "POST",
+
+  "auth": {
+    "scheme": "header",
+    "header_name": "api_key",
+    "value_template": "{api_key}",
+    "query_param": "api_key"
+  },
+
+  "tenant": {
+    "header_name": null,
+    "query_param": null,
+    "_comment": "No tenant header: the tenant is resolved server-side FROM the API key, so the bridge cannot assert one."
+  },
+
+  "extra_headers": {},
+
+  "batch": {
+    "mode": "envelope",
+    "envelope_path": "punches",
+    "envelope_device_serial_field": "deviceSerialNumber",
+    "size": 200
+  },
+
+  "field_map": {
+    "employee_code": "employeeCode",
+    "punch_time": "punchTimeUtc",
+    "punch_type": "punchType",
+    "verification_type": null,
+    "device_serial": null,
+    "device_id": null,
+    "client_record_id": "sourceRef"
+  },
+
+  "value_map": {
+    "punch_type": {
+      "CHECK_IN": "IN",
+      "CHECK_OUT": "OUT",
+      "BREAK_IN": "IN",
+      "BREAK_OUT": "OUT",
+      "OT_IN": "IN",
+      "OT_OUT": "OUT"
+    },
+    "verification_type": {}
+  },
+
+  "datetime_format": "iso8601_utc_z",
+  "datetime_pattern": "%Y-%m-%d %H:%M:%S",
+  "output_timezone": "UTC",
+
+  "response": {
+    "success_status_codes": [200],
+    "success_path": null,
+    "processed_count_path": "inserted",
+    "failed_count_path": "failed",
+    "error_message_path": null,
+
+    "results_path": "results",
+    "result_id_path": "sourceRef",
+    "result_ok_path": null,
+
+    "result_status_path": "status",
+    "result_accepted_statuses": ["Inserted", "Duplicate"],
+    "result_terminal_statuses": ["UnknownEmployee", "Invalid"]
+  },
+
+  "test_connection": {
+    "path": null,
+    "method": "GET"
+  }
+}

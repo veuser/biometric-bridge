@@ -324,37 +324,79 @@ Key rules, restated because they are the ones that cause data loss when violated
   device with a 2-year buffer doesn't push 100k records into HRMS on install.
   This is called out explicitly in the install docs as a decision the operator makes.
 
-**Partial acceptance rule (spec §43.19).** If the HRMS response indicates some records
-accepted and some rejected, the run closes `PARTIAL` and the watermark advances
-**only if the accepted set forms a contiguous prefix in time** — i.e. every rejected
-record is strictly later than every accepted one. In that case the watermark moves to
-the max accepted `punch_time`. If accepted and rejected records interleave in time,
-the watermark does **not** move at all; advancing it would strand the rejected records
-behind it permanently. Rejected records are counted in `records_failed` with the
-HRMS-supplied reason in `error_message`. Whether this path is reachable at all depends
-on your HRMS response shape (§6 `response.*`); if the API is all-or-nothing, `PARTIAL`
-simply never occurs.
+**Partial acceptance rule (spec §43.19) — REVISED 2026-08-08.** The earlier version of
+this rule advanced the watermark only when accepted records formed a contiguous prefix
+in time, and otherwise held it, on the grounds that advancing would strand rejected
+records behind it. That was written before the HRMS response shape was known, and it is
+wrong for one of the two rejection kinds.
+
+The distinction that matters is **"HRMS could not answer" versus "HRMS answered no"**:
+
+| Per-record outcome | Watermark | Counted as |
+|---|---|---|
+| accepted / inserted | advances | `records_success` |
+| duplicate (already held) | advances | `records_success`, reported separately |
+| **terminal** reject — unknown employee code, malformed record | **advances** | `records_failed` |
+| **retryable** — 429, 5xx, timeout, connection reset | **blocks** | run `FAILED` |
+
+**Rule: any retryable failure in a run leaves the watermark untouched and the whole
+window is retried. If every record received a final answer — including "no" — the
+watermark advances to the max `punch_time` in the run.**
+
+Stranding a terminally-rejected record is the correct outcome, because retrying it
+achieves nothing. Holding the watermark for it is actively harmful: an unenrolled
+employee would wedge the device permanently, each cycle re-reading a wider window and
+re-sending every punch in it to fail on the same record. **One unenrolled employee
+would stop attendance for everybody.**
+
+Terminal failures are surfaced instead of retried — counted in
+`sync_runs.records_failed`, shown on the dashboard with the offending employee code,
+and logged. An unenrolled employee becomes a visible task for HR rather than a silent
+stall. The original safety property is untouched: HRMS being down, slow or erroring
+still blocks the watermark, which was the point.
+
+Full reasoning and the per-record response contract this depends on:
+[docs/ATTENDANCE-INGESTION.md](docs/ATTENDANCE-INGESTION.md) §5.
 
 **All-invalid window.** If every record in the window fails normalization, the run
 closes `INVALID_RECORD` (not `NO_RECORDS`) so it is visibly different from a genuinely
 idle device, and the watermark does not move.
 
-### 5.5 Assumption to be confirmed against the real HRMS API
+### 5.5 HRMS idempotency — RESOLVED 2026-08-08, and the answer is "no"
+
+The original assumption was:
 
 > The overlap window and the retry policy both re-send punches that HRMS may have
 > already accepted. The design assumes the existing HRMS attendance endpoint is
-> **idempotent** for a repeated punch (same employee, same timestamp, same type) —
-> either deduplicating or accepting it harmlessly.
+> **idempotent** for a repeated punch (same employee, same timestamp, same type).
 
-If it is not, the bridge cannot fix that without changing HRMS, which is forbidden.
-The fallback within bridge scope is `overlap = 0` plus a strict
-`punch_time > watermark` filter, which trades duplicate-risk for a small
-lost-record risk under clock skew. **This needs confirmation when you supply the
-contract** — it is the single highest-risk open question in the design.
+**That assumption is false.** HRMS was reviewed on 2026-08-08 — see
+[docs/HRMS-REVIEW.md](docs/HRMS-REVIEW.md). Both write paths (`AddAttendance`,
+`PostLatestWebCheckIn`) append a log row unconditionally, and `EmpAttendanceLogs` has
+a primary key and three foreign keys but **no unique index**. Nothing deduplicates.
 
-Edge case §43.20 (timeout after HRMS may have processed) has the same root: the
-bridge treats a timeout as failure and retries, which is only safe under the same
-idempotency assumption.
+The review also established the larger finding: **HRMS has no biometric ingestion
+endpoint at all.** `CheckInTypesEnum.Biometric = 1` is seeded in the lookup table and
+never written by any code path. There is no contract to adapt to — one has to be
+defined.
+
+Consequences for this design:
+
+- The 60 s overlap in §5.4 would create duplicate attendance rows on every cycle
+  against the current API. It cannot be used as-is.
+- Retry-after-timeout (§43.20) has the same problem from the same root.
+- Dropping to `overlap = 0` + strict `punch_time > watermark` is the only
+  bridge-side mitigation, and it is a poor one here: both terminals measured ~150 s
+  behind the bridge clock (§1.1), which is exactly the condition under which a
+  zero-overlap window silently loses punches.
+
+**The real fix is a dedicated ingestion endpoint that deduplicates** — Option A in the
+review's §5, and the recommendation. That requires an HRMS change, which the original
+brief forbade. The brief forbade it on the assumption a contract already existed; it
+does not. **This is now a decision for you, not an assumption the plan can make.**
+
+Until it is made, Phase 3 is blocked. Phases 1, 2, 4 and 5 are unaffected — they build
+and test against the fake HRMS.
 
 ### 5.6 Concurrency and locking
 
@@ -723,13 +765,26 @@ no schedule time — but Phase 3 will not be guessed at.
 
 ## 14. Open questions
 
-1. **HRMS attendance API contract** — endpoint path, method, request/response shape,
-   auth header and scheme, error semantics, batch vs single. Blocks Phase 3.
-2. **HRMS idempotency** (§5.5) — does a repeated identical punch get deduplicated?
-   Determines whether overlap stays at 60s or drops to 0. Highest-risk unknown.
-3. **Employee code mapping** — device `user_id` values (e.g. `IQ-1004`) are assumed to
-   match HRMS employee codes exactly. If HRMS uses different identifiers, the bridge
-   needs a mapping table, which is a scope addition.
+1. ~~**HRMS attendance API contract**~~ — **answered 2026-08-08: there is no contract.**
+   HRMS has no biometric ingestion endpoint; `CheckInTypesEnum.Biometric = 1` is a
+   seeded lookup value that nothing writes. See [docs/HRMS-REVIEW.md](docs/HRMS-REVIEW.md).
+   **Superseded by Q1a below.**
+   - **Q1a — Option A or Option B?** (review §5) Option A = a new API-key ingestion
+     endpoint in HRMS that batches and deduplicates; the bridge then works exactly as
+     planned. Option B = a service-account JWT against the existing
+     `POST api/v1/attendence`, no HRMS change, but one request per punch, no dedup,
+     no `EmpCode → EmpId` lookup, and forced `overlap = 0`. **Recommendation: A.**
+     Blocks Phase 3; blocks nothing else.
+2. ~~**HRMS idempotency**~~ — **answered 2026-08-08: not idempotent.** No unique index
+   on `EmpAttendanceLogs`, both write paths append unconditionally. Recorded in §5.5.
+3. ~~**Employee code mapping**~~ — **answered 2026-08-08 by the customer: the device
+   `user_id` field IS `Employees.EmpCode`** (`IQ-1004` → Manoj Settebathula). Resolution
+   is a direct tenant-scoped, case-insensitive lookup; the mapping table proposed in
+   HRMS-DB-CHANGES.md §3 is cancelled. Two data questions remain, both answered by
+   queries in that document: is `EmpCode` populated for every enrolled employee, and is
+   it unique within a tenant? A device user with no match is a **terminal** per-record
+   failure, not a batch failure — see
+   [docs/ATTENDANCE-INGESTION.md](docs/ATTENDANCE-INGESTION.md) §5.
 4. **Initial lookback** — how far back should the first sync on a new device reach?
    Plan defaults to 24h.
 5. ~~**TLS for the portal**~~ — **resolved 2026-08-08: plain HTTP on the LAN, no
@@ -737,11 +792,37 @@ no schedule time — but Phase 3 will not be guessed at.
    unaffected and stays as planned.
 6. **Devices in scope at go-live** — plan assumes the two known devices; multi-site
    (Hyderabad/Bangalore) is supported by design but changes install topology.
-7. **What does `status=4` mean on these terminals?** (§1.1) It is 81% of observed
-   punches and currently decodes to `UNKNOWN`. Answering it is a one-line change to
-   `VERIFICATION_BY_STATUS`. Only matters if the HRMS contract actually wants a
-   verification method — if that field maps to `null`, this is cosmetic.
+7. ~~**What does `status=4` mean on these terminals?**~~ — **moot for ingestion as of
+   2026-08-08.** `EmpAttendanceLogs` has no verification-mode column and the design does
+   not add one: 81% of observed punches report `status=4`, whose meaning is unsettled
+   between the two firmware families in use, and writing a guessed label into an
+   attendance ledger is worse than writing nothing. The value stays in bridge
+   diagnostics, where it is useful for debugging and harmless if wrong. Revisit only if
+   HR asks for it. See [docs/ATTENDANCE-INGESTION.md](docs/ATTENDANCE-INGESTION.md) §8.
 8. **Device clocks are ~150 s slow** (§1.1). Operator action on the terminals, not a
    code change, but it should happen before the first production sync.
+9. **HRMS defect D3 — `ConstructTotalHours` throws on an out-first day.** Not a bridge
+   defect and not a bridge fix, but biometric ingestion turns it from rare into
+   routine (the exit terminal already logs `punch=0` records). It should be fixed on
+   the HRMS side before go-live. Reported in [docs/HRMS-REVIEW.md](docs/HRMS-REVIEW.md) §4.
+10. **HRMS defect D4 — the vendor API-key path disables tenant scoping.** Directly
+   load-bearing if Option A is chosen, because an API-key request currently resolves
+   to an empty `DataKey`, which both matches every tenant on read and would stamp
+   unreadable rows on write. Tenant-from-API-key has to be solved before any
+   API-key ingestion route can work.
+11. **Night shift** — does anyone on these terminals work past midnight?
+   `EmployeeAttendance.Date` is a calendar date, and `Shifts` carries an
+   `IsOvernightShift` flag that **nothing can use**: a solution-wide search for
+   `ShiftId` / `EmployeeShift` / `ShiftAssignment` returns nothing, so shifts are
+   defined and never assigned. An overnight shift therefore splits across two
+   attendance rows and `ConstructTotalHours` will not pair it. Pre-existing, not
+   caused by ingestion, but ingestion makes it visible. See
+   [docs/ATTENDANCE-INGESTION.md](docs/ATTENDANCE-INGESTION.md) §6.
+12. **HRMS defect D6 — `ConstructTotalHours` orders by insertion, not by punch time.**
+   `OrderBy(x => x.Id)` equals time order only while a human presses a button and the
+   row is written immediately. Manual historical sync (§5.7) and offline-device
+   catch-up both write older punches after newer ones, which scrambles the In/Out
+   pairing and silently produces wrong totals. Should be fixed alongside D3 — same
+   20-line method, both become routine on day one of ingestion.
 
 None of these block starting Phase 1.

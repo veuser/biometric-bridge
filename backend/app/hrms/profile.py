@@ -67,6 +67,10 @@ class BatchConfig(BaseModel):
     mode: BatchMode = BatchMode.ARRAY
     envelope_path: str = "records"
     size: int = Field(default=200, ge=1, le=5000)
+    #: Envelope key carrying the device serial alongside the records array, for APIs
+    #: that take it once per batch rather than repeating it on every punch. ``None``
+    #: omits it entirely, like every other unmapped field.
+    envelope_device_serial_field: str | None = None
 
 
 class FieldMap(BaseModel):
@@ -105,7 +109,26 @@ class ResponseConfig(BaseModel):
     #: Path to a per-record result array, for APIs that report partial acceptance.
     results_path: str | None = None
     result_id_path: str | None = None
+    #: Boolean-valued path. Use when a record's outcome is a simple ok/not-ok flag.
     result_ok_path: str | None = None
+
+    #: String-valued path, for APIs that report a *reason* rather than a flag — and
+    #: the two lists below that give those strings meaning.
+    #:
+    #: The distinction that matters is not accepted-versus-rejected but **terminal
+    #: versus retryable**, because it decides whether the watermark may advance past
+    #: a record. "Unknown employee code" is a final answer: the employee is not
+    #: enrolled, and resending changes nothing. If such a record blocked the
+    #: watermark, one unenrolled employee would wedge the device forever — each
+    #: cycle re-reading a wider window to fail on the same row, with every later
+    #: punch stranded behind it.
+    result_status_path: str | None = None
+    #: Statuses meaning the record is safely in HRMS. A duplicate belongs here: it
+    #: means the row is already held, which is success, not failure.
+    result_accepted_statuses: list[str] = Field(default_factory=list)
+    #: Statuses meaning HRMS has definitively refused. Counted as failures and
+    #: reported, but they do NOT hold the watermark back.
+    result_terminal_statuses: list[str] = Field(default_factory=list)
 
 
 class TestConnectionConfig(BaseModel):

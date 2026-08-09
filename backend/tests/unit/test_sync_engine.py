@@ -417,6 +417,34 @@ class TestPartialAcceptance:
         rejected = [make_punch(client_record_id="b", punch_time=utc_of(12, 5))]
         assert _safe_watermark([], rejected) is None
 
+    def test_terminal_rejection_does_not_block_the_watermark(self) -> None:
+        """An unenrolled employee must not pin the cursor.
+
+        Without this, one bad employee code stalls the device permanently: every
+        cycle re-reads a wider window, re-sends everything in it, fails on the same
+        record, and strands every later punch behind it.
+        """
+        accepted = [make_punch(client_record_id="a", punch_time=utc_of(12, 15))]
+        rejected = [make_punch(client_record_id="b", punch_time=utc_of(12, 5))]
+
+        # Same inputs as test_watermark_frozen_when_rejections_interleave, which
+        # freezes — the only difference is that HRMS called this one final.
+        assert _safe_watermark(accepted, rejected, terminal_ids={"b"}) == utc_of(12, 15)
+
+    def test_retryable_rejection_still_blocks_even_alongside_a_terminal_one(self) -> None:
+        """A record HRMS might yet accept keeps its hold on the cursor."""
+        accepted = [make_punch(client_record_id="a", punch_time=utc_of(12, 20))]
+        rejected = [
+            make_punch(client_record_id="terminal", punch_time=utc_of(12, 5)),
+            make_punch(client_record_id="maybe", punch_time=utc_of(12, 10)),
+        ]
+        assert _safe_watermark(accepted, rejected, terminal_ids={"terminal"}) is None
+
+    def test_terminal_rejections_alone_never_raise_the_watermark(self) -> None:
+        """Terminal means 'not stored'. It must not act like an acceptance."""
+        rejected = [make_punch(client_record_id="b", punch_time=utc_of(12, 5))]
+        assert _safe_watermark([], rejected, terminal_ids={"b"}) is None
+
 
 class TestFailureModes:
     def test_device_unavailable_closes_the_run_and_keeps_the_watermark(

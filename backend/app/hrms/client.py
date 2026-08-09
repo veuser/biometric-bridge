@@ -45,6 +45,11 @@ class PushResult:
     failed: int
     accepted_ids: set[str] = field(default_factory=set)
     rejected_ids: set[str] = field(default_factory=set)
+    #: Subset of ``rejected_ids`` that HRMS has refused *finally* — an unenrolled
+    #: employee code, a malformed record. Resending cannot change the answer, so the
+    #: watermark is allowed past them. A rejection that is NOT in this set is treated
+    #: as possibly transient and does hold the watermark back.
+    terminal_ids: set[str] = field(default_factory=set)
     error_message: str | None = None
     duration_ms: int = 0
 
@@ -203,7 +208,7 @@ class HrmsClient:
                 message = resolve_path(payload, config.error_message_path) or "no reason given"
                 raise HrmsBadRequestError(f"HRMS reported a failure: {message}")
 
-        accepted, rejected = self._per_record_results(payload, punches)
+        accepted, rejected, terminal = self._per_record_results(payload, punches)
 
         processed = _as_int(resolve_path(payload, config.processed_count_path))
         failed = _as_int(resolve_path(payload, config.failed_count_path))
@@ -228,25 +233,31 @@ class HrmsClient:
             failed=failed,
             accepted_ids=accepted,
             rejected_ids=rejected,
+            terminal_ids=terminal,
             error_message=resolve_path(payload, config.error_message_path),
             duration_ms=duration_ms,
         )
 
     def _per_record_results(
         self, payload: Any, punches: list[BiometricPunch]
-    ) -> tuple[set[str], set[str]]:
+    ) -> tuple[set[str], set[str], set[str]]:
         """Read a per-record result array, if the profile declares one.
 
         This is what makes PARTIAL reachable. Without it the batch is all-or-nothing
-        and both sets come back empty.
+        and all three sets come back empty.
+
+        Returns ``(accepted, rejected, terminal)``, where ``terminal`` is the subset
+        of ``rejected`` the API has refused for good — see
+        ``ResponseConfig.result_terminal_statuses`` for why the distinction decides
+        whether the watermark may move.
         """
         config = self._profile.response
         if not config.results_path or not config.result_id_path:
-            return set(), set()
+            return set(), set(), set()
 
         results = resolve_path(payload, config.results_path)
         if not isinstance(results, list):
-            return set(), set()
+            return set(), set(), set()
 
         by_id = {p.client_record_id: p for p in punches}
         # Fall back to employee code when the profile does not send our record id.
@@ -254,6 +265,8 @@ class HrmsClient:
 
         accepted: set[str] = set()
         rejected: set[str] = set()
+        terminal: set[str] = set()
+
         for entry in results:
             identifier = resolve_path(entry, config.result_id_path)
             if identifier is None:
@@ -261,9 +274,27 @@ class HrmsClient:
             punch = by_id.get(str(identifier)) or by_code.get(str(identifier))
             if punch is None:
                 continue
+
+            record_id = punch.client_record_id
+
+            if config.result_status_path:
+                status = str(resolve_path(entry, config.result_status_path) or "")
+                if status in config.result_accepted_statuses:
+                    accepted.add(record_id)
+                else:
+                    rejected.add(record_id)
+                    # Unknown statuses are treated as retryable on purpose. A status
+                    # this profile has never seen might be transient, and holding the
+                    # watermark is the recoverable mistake — advancing past a record
+                    # that was never stored loses it silently and permanently.
+                    if status in config.result_terminal_statuses:
+                        terminal.add(record_id)
+                continue
+
             ok = resolve_path(entry, config.result_ok_path) if config.result_ok_path else True
-            (accepted if ok else rejected).add(punch.client_record_id)
-        return accepted, rejected
+            (accepted if ok else rejected).add(record_id)
+
+        return accepted, rejected, terminal
 
 
 def _safe_json(response: httpx.Response) -> Any:

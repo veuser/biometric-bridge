@@ -57,10 +57,22 @@ def punch_to_record(punch: BiometricPunch, profile: HrmsProfile) -> dict[str, An
     return record
 
 
-def build_body(records: list[dict[str, Any]], profile: HrmsProfile) -> Any:
+def build_body(
+    records: list[dict[str, Any]],
+    profile: HrmsProfile,
+    device_serial: str | None = None,
+) -> Any:
     """Wrap records in the batching shape the profile declares."""
     if profile.batch.mode is BatchMode.ENVELOPE:
         body: dict[str, Any] = {}
+
+        # Batch-level fields sit at the top of the envelope, beside the records
+        # array. Only emitted when the profile names a key for them, so an API that
+        # does not want the serial never sees it.
+        serial_field = profile.batch.envelope_device_serial_field
+        if serial_field:
+            body[serial_field] = device_serial
+
         # Dotted envelope paths let a profile express {"data": {"records": [...]}}.
         parts = profile.batch.envelope_path.split(".")
         cursor = body
@@ -88,4 +100,7 @@ def iter_batches(
 
 
 def build_request_body(punches: list[BiometricPunch], profile: HrmsProfile) -> Any:
-    return build_body([punch_to_record(p, profile) for p in punches], profile)
+    # A batch is always read from one terminal, so the serial is the same for every
+    # punch in it; take it from the first rather than threading it through the call.
+    device_serial = punches[0].device_serial_number if punches else None
+    return build_body([punch_to_record(p, profile) for p in punches], profile, device_serial)
