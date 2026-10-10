@@ -7,7 +7,7 @@
     Checks the Windows service, the health endpoint, and the tail of the log.
 #>
 [CmdletBinding()]
-param([int]$Port = 8080)
+param([int]$Port = 10255)
 
 $ErrorActionPreference = 'Continue'
 $DataRoot = "$env:ProgramData\BiometricBridge"

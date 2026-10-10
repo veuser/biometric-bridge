@@ -25,8 +25,8 @@ export default defineConfig({
     // Dev only: proxying keeps the API same-origin, so the session cookie behaves
     // exactly as it does in production.
     proxy: {
-      '/api': 'http://127.0.0.1:8080',
-      '/health': 'http://127.0.0.1:8080',
+      '/api': 'http://127.0.0.1:10255',
+      '/health': 'http://127.0.0.1:10255',
     },
   },
 })

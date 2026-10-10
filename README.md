@@ -36,7 +36,7 @@ monitoring. The HRMS API is never changed — the bridge adapts to it.
                   ├───LAN──▶  Biometric Bridge         │────HTTPS 443───▶ HRMS API
   eSSL terminal ──┘        │  • device connector       │                  (unchanged)
                            │  • sync engine            │
-   Operator ───LAN:8080────▶  • scheduler              │
+   Operator ───LAN:10255───▶  • scheduler              │
    (browser, HTTP)         │  • React portal + SQLite  │
                            └──────────────────────────┘
                               Windows service, one process
@@ -66,7 +66,7 @@ clock; that is an operator action on the terminal.
 ## Getting started (operator)
 
 1. Extract the package and run `install.ps1` as Administrator.
-2. Open `http://<machine>:8080`.
+2. Open `http://<machine>:10255`.
 3. **Create the administrator account.** The bridge ships with no credentials at
    all, so the first visit is a setup screen rather than a login form.
 4. Add each terminal (IP, port, and whether it is an entry or exit device) and press

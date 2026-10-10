@@ -21,7 +21,7 @@ All prefixed `BIOMETRIC_BRIDGE_`.
 |---|---|---|
 | `APP_ENV` | `production` | |
 | `HOST` | `0.0.0.0` | Binds all interfaces so the portal is reachable from the LAN. Exposure is limited by the firewall rule, not by this. |
-| `PORT` | `8080` | Must match the firewall rule |
+| `PORT` | `10255` | Must match the firewall rule |
 | `PORTAL_TLS_ENABLED` | `false` | Set to `true` once a certificate is in place — it turns on the `Secure` cookie flag and HSTS |
 | `DEFAULT_TIMEZONE` | `Asia/Kolkata` | How device-local timestamps are interpreted |
 | `MIN_PASSWORD_LENGTH` | `4` | Portal password minimum. Set to 12+ to also enable the common-password blocklist |

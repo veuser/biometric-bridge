@@ -21,7 +21,7 @@ also lost.
 
 | Direction | Port | Peer | Purpose |
 |---|---|---|---|
-| Inbound | TCP 8080 | LAN subnet only | The portal |
+| Inbound | TCP 10255 | LAN subnet only | The portal |
 | Outbound | TCP 4370 | Terminals | ZK protocol |
 | Outbound | TCP 443 | HRMS | Attendance push |
 
@@ -52,7 +52,7 @@ service and waits for `/health` to answer. It prints the portal URL when done.
 
 ### After installing
 
-1. Open `http://<machine-name>:8080`.
+1. Open `http://<machine-name>:10255`.
 2. **Create the administrator account.** There are no default credentials, so the
    first visit is a setup screen. The minimum length is configurable
    (`BIOMETRIC_BRIDGE_MIN_PASSWORD_LENGTH`, default 4) — but this portal is plain

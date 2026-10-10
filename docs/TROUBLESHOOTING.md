@@ -66,7 +66,7 @@ slow. Worth fixing before it becomes a payroll dispute.
 | Check | Command |
 |---|---|
 | Service running | `.\status.ps1` |
-| Port listening | `Test-NetConnection localhost -Port 8080` |
+| Port listening | `Test-NetConnection localhost -Port 10255` |
 | Firewall rule | `Get-NetFirewallRule -DisplayName 'Biometric Bridge Portal'` |
 | From another machine | Confirm you are on the same subnet — the rule is LocalSubnet only |
 

@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # install script scopes the firewall rule to the local subnet (PLAN.md §37) —
     # that, not the bind address, is what limits exposure.
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8080, ge=1, le=65535)
+    port: int = Field(default=10255, ge=1, le=65535)
 
     # Portal runs over plain HTTP on the LAN (PLAN.md §8, decided 2026-08-08).
     # Flipping this to True is all that is needed to make the session cookie Secure

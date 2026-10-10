@@ -6,8 +6,9 @@
     and pushes them to the organisation's existing HRMS API.
   </description>
 
-  <executable>%BASE%\BiometricBridge\BiometricBridge.exe</executable>
-  <workingdirectory>%BASE%\BiometricBridge</workingdirectory>
+  <!-- %BASE% is the folder holding WinSW.exe (winsw\), so the app is one level up. -->
+  <executable>%BASE%\..\BiometricBridge\BiometricBridge.exe</executable>
+  <workingdirectory>%BASE%\..\BiometricBridge</workingdirectory>
 
   <!-- Starts on boot without anyone logging in. -->
   <startmode>Automatic</startmode>
@@ -35,7 +36,7 @@
 
   <env name="BIOMETRIC_BRIDGE_APP_ENV" value="production"/>
   <env name="BIOMETRIC_BRIDGE_HOST" value="0.0.0.0"/>
-  <env name="BIOMETRIC_BRIDGE_PORT" value="8080"/>
+  <env name="BIOMETRIC_BRIDGE_PORT" value="10255"/>
   <env name="BIOMETRIC_BRIDGE_LOG_LEVEL" value="INFO"/>
   <env name="BIOMETRIC_BRIDGE_LOG_TO_STDOUT" value="false"/>
 

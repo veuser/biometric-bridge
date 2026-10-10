@@ -65,8 +65,13 @@ try {
 Write-Host '[3/4] Freezing the backend with PyInstaller...' -ForegroundColor Yellow
 Push-Location (Join-Path $root 'backend')
 try {
-    & $venvPython -m PyInstaller --noconfirm --clean biometric_bridge.spec
-    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed.' }
+    # PyInstaller logs progress to stderr; under Windows PowerShell 5.1 with 'Stop'
+    # that is raised as an error, so judge success by the exit code instead.
+    $ErrorActionPreference = 'Continue'
+    & $venvPython -m PyInstaller --noconfirm --clean biometric_bridge.spec 2>&1 | ForEach-Object { "$_" }
+    $pyInstallerExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($pyInstallerExit -ne 0) { throw 'PyInstaller failed.' }
 } finally {
     Pop-Location
 }

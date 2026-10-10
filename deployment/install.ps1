@@ -16,10 +16,11 @@
 .EXAMPLE
     .\install.ps1
     .\install.ps1 -Port 9090 -SkipFirewall
+    .\install.ps1 -Port 8080          # revert to the previous default
 #>
 [CmdletBinding()]
 param(
-    [int]$Port = 8080,
+    [int]$Port = 10255,
     [switch]$SkipFirewall,
     [string]$InstallDir = "$env:ProgramFiles\BiometricBridge"
 )
@@ -88,8 +89,8 @@ if (Test-Path (Join-Path $source 'docs')) {
 }
 
 $serviceXml = Join-Path $InstallDir 'winsw\BiometricBridge.xml'
-if ($Port -ne 8080) {
-    (Get-Content $serviceXml) -replace 'name="BIOMETRIC_BRIDGE_PORT" value="8080"',
+if ($Port -ne 10255) {
+    (Get-Content $serviceXml) -replace 'name="BIOMETRIC_BRIDGE_PORT" value="10255"',
         "name=`"BIOMETRIC_BRIDGE_PORT`" value=`"$Port`"" | Set-Content $serviceXml -Encoding utf8
 }
 

@@ -8,7 +8,7 @@
     disturb an installed service's database.
 
     The portal is served from the committed build in backend\app\static, so this one
-    command gives you the whole application at http://localhost:8080.
+    command gives you the whole application at http://localhost:10255.
 
     Use -Reload while editing backend code. Use frontend\npm run dev in a second
     terminal if you are editing the portal — it proxies the API to this process.
@@ -20,7 +20,7 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$Port = 8080,
+    [int]$Port = 10255,
     [switch]$Reload,
     [ValidateSet('DEBUG', 'INFO', 'WARNING', 'ERROR')]
     [string]$LogLevel = 'INFO',

@@ -97,7 +97,7 @@ rows — no schema migration, and no ambiguity about which rows are already prot
 
 | Direction | Port | Scope |
 |---|---|---|
-| Inbound | TCP 8080 | Local subnet only |
+| Inbound | TCP 10255 | Local subnet only |
 | Outbound | TCP 4370 | Terminals on the LAN |
 | Outbound | TCP 443 | HRMS |
 
