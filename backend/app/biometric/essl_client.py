@@ -33,6 +33,8 @@ from app.biometric.base import (
     ConnectionTestResult,
     DeviceInfo,
     DeviceUser,
+    DeviceUserRecord,
+    EnrollableDevice,
     RawPunch,
 )
 from app.core.errors import (
@@ -45,7 +47,13 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-class EsslBiometricDevice(BiometricDevice):
+#: Longest user id and name the terminal's user table can hold. Longer values are cut by
+#: the firmware without error, so the bridge cuts them itself and says so.
+MAX_USER_ID_LENGTH = 24
+MAX_NAME_LENGTH = 24
+
+
+class EsslBiometricDevice(BiometricDevice, EnrollableDevice):
     def __init__(
         self,
         *,
@@ -155,6 +163,47 @@ class EsslBiometricDevice(BiometricDevice):
             ]
 
         return self._with_connection(read)
+
+    # ── the one write: add a user ────────────────────────────────────────────
+
+    def list_user_records(self) -> list[DeviceUserRecord]:
+        def read() -> list[DeviceUserRecord]:
+            records: list[DeviceUserRecord] = []
+            for u in self._conn.get_users() or []:
+                card = getattr(u, "card", 0)
+                records.append(
+                    DeviceUserRecord(
+                        uid=int(u.uid),
+                        user_id=str(u.user_id).strip(),
+                        name=str(u.name or "").strip(),
+                        card=str(int(card)) if card else None,
+                    )
+                )
+            return records
+
+        return self._with_connection(read)
+
+    def add_user(self, *, uid: int, user_id: str, name: str, card: str | None) -> None:
+        if len(user_id) > MAX_USER_ID_LENGTH:
+            # Truncating a user id would register the employee under a code HRMS does
+            # not know, so their punches would come back as unknown. Refuse instead.
+            raise DeviceConfigurationError(
+                f"Employee code {user_id!r} is longer than the {MAX_USER_ID_LENGTH} "
+                "characters the terminal can store."
+            )
+
+        def write() -> None:
+            self._conn.set_user(
+                uid=uid,
+                name=name[:MAX_NAME_LENGTH],
+                privilege=0,  # USER_DEFAULT: never an administrator
+                password="",
+                group_id="",
+                user_id=user_id,
+                card=int(card) if card else 0,
+            )
+
+        self._with_connection(write)
 
     def get_attendance_logs(
         self, from_time: datetime, to_time: datetime

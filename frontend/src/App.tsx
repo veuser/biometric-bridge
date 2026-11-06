@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage'
 import DevicesPage from './pages/DevicesPage'
 import HrmsPage from './pages/HrmsPage'
 import SyncPage from './pages/SyncPage'
+import EnrollmentPage from './pages/EnrollmentPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
 import UsersPage from './pages/UsersPage'
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/hrms" element={<HrmsPage />} />
         <Route path="/sync" element={<SyncPage />} />
+        <Route path="/enrollment" element={<EnrollmentPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/users" element={<UsersPage />} />

@@ -64,6 +64,20 @@ class PushResult:
         return bool(self.rejected_ids) and bool(self.accepted_ids)
 
 
+@dataclass(slots=True)
+class HrmsEmployee:
+    """One employee HRMS wants registered on the terminals. In memory only."""
+
+    employee_code: str
+    name: str
+    card_number: str | None = None
+
+
+#: Upper bound on pages read in one call: 500 pages of 200 is 100,000 employees, far
+#: beyond any site this bridge serves, and stops a misbehaving cursor from looping.
+MAX_EMPLOYEE_PAGES = 500
+
+
 class HrmsClient:
     def __init__(
         self,
@@ -181,6 +195,85 @@ class HrmsClient:
         if response.status_code >= 400:
             return False, f"HRMS returned {response.status_code}."
         return True, f"Connected ({response.status_code})."
+
+    def list_employees(
+        self, *, api_key: str, tenant: str | None = None, page_size: int = 200
+    ) -> list[HrmsEmployee]:
+        """Every employee HRMS wants on the terminals, following the page cursor.
+
+        Read-only, and the response is held in memory only: nothing here is stored.
+        Raises a classified error on failure, so a half-read list is never returned
+        as if it were complete — a truncated list would look like "these are all the
+        employees" and is exactly the case the caller cannot detect.
+        """
+        path = self._profile.employees_path
+        if not path:
+            raise HrmsNotConfiguredError(
+                "This HRMS profile has no employees endpoint, so new employees cannot be "
+                "synchronized. Set 'employees_path' on the HRMS Configuration page."
+            )
+
+        url = f"{self._base_url}{path}"
+        employees: list[HrmsEmployee] = []
+        after_id = 0
+
+        for _ in range(MAX_EMPLOYEE_PAGES):
+            try:
+                with httpx.Client(timeout=self._timeout, transport=self._transport) as http:
+                    response = http.request(
+                        "GET",
+                        url,
+                        headers=self._headers(api_key, tenant),
+                        params={
+                            **self._params(api_key, tenant),
+                            "afterId": str(after_id),
+                            "limit": str(page_size),
+                        },
+                    )
+            except httpx.TimeoutException as exc:
+                raise HrmsTimeoutError("HRMS did not respond within the timeout.") from exc
+            except httpx.HTTPError as exc:
+                raise HrmsUnavailableError("HRMS could not be reached.") from exc
+
+            code = response.status_code
+            if code in (401, 403):
+                raise HrmsAuthenticationError(
+                    f"HRMS refused the employee list ({code}). The API key needs the "
+                    "'biometric.read' scope."
+                )
+            if code == 429 or code >= 500:
+                raise HrmsUnavailableError(f"HRMS returned a server error ({code}).")
+            if code >= 400:
+                raise HrmsBadRequestError(f"HRMS rejected the employee list request ({code}).")
+
+            body = _safe_json(response)
+            rows = body.get("employees") if isinstance(body, dict) else None
+            if not isinstance(rows, list):
+                raise HrmsBadRequestError(
+                    "HRMS returned an employee list in an unexpected shape."
+                )
+
+            for row in rows:
+                if not isinstance(row, dict) or not str(row.get("employeeCode") or "").strip():
+                    continue
+                card = str(row.get("cardNumber") or "").strip()
+                employees.append(
+                    HrmsEmployee(
+                        employee_code=str(row["employeeCode"]).strip(),
+                        name=str(row.get("name") or "").strip(),
+                        card_number=card or None,
+                    )
+                )
+
+            next_id = _as_int(body.get("nextAfterId"))
+            if next_id is None:
+                return employees
+            if next_id <= after_id:
+                # A cursor that does not advance would loop forever.
+                raise HrmsBadRequestError("HRMS returned a page cursor that does not advance.")
+            after_id = next_id
+
+        raise HrmsBadRequestError("HRMS returned more employee pages than the bridge will read.")
 
     # ── response interpretation ──────────────────────────────────────────────
 

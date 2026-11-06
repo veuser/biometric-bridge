@@ -1,6 +1,7 @@
 {
   "attendance_path": "/api/v1/attendence/biometric",
   "method": "POST",
+  "employees_path": "/api/v1/biometric/employees",
   "auth": {
     "scheme": "header",
     "header_name": "api_key",

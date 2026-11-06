@@ -188,3 +188,33 @@ export interface LogPage {
   file: string
   truncated: boolean
 }
+
+export interface EnrollmentAddedUser {
+  employee_code: string
+  name: string
+  card_set: boolean
+  warnings: string[]
+}
+
+export interface EnrollmentFailedUser {
+  employee_code: string
+  reason: string
+}
+
+export interface DeviceEnrollment {
+  device_id: number
+  device_name: string
+  status: 'OK' | 'PARTIAL' | 'FAILED' | 'SKIPPED'
+  dry_run: boolean
+  added: EnrollmentAddedUser[]
+  already_present: number
+  skipped: EnrollmentFailedUser[]
+  failed: EnrollmentFailedUser[]
+  error_message: string | null
+}
+
+export interface EnrollmentResult {
+  dry_run: boolean
+  employees_in_hrms: number
+  devices: DeviceEnrollment[]
+}

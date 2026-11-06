@@ -15,6 +15,8 @@ from app.biometric.base import (
     ConnectionTestResult,
     DeviceInfo,
     DeviceUser,
+    DeviceUserRecord,
+    EnrollableDevice,
     RawPunch,
 )
 from app.core.errors import DeviceUnavailableError
@@ -129,3 +131,43 @@ class FakeDevice(BiometricDevice):
 
 def unreachable_device() -> FakeDevice:
     return FakeDevice(fail_with=DeviceUnavailableError("Terminal is unreachable."), fail_times=99)
+
+
+class FakeEnrollableDevice(FakeDevice, EnrollableDevice):
+    """A terminal with a user table that can be added to.
+
+    Mirrors the real protocol's dangerous behaviour on purpose: ``add_user`` into an
+    occupied slot **overwrites** it, exactly as ``set_user`` does on a ZK terminal. A test
+    that expects an existing user to survive therefore fails if the planner ever picks an
+    occupied slot, instead of passing against a fake that was politely safer than the
+    hardware.
+    """
+
+    def __init__(
+        self,
+        *,
+        records: list[DeviceUserRecord] | None = None,
+        fail_add_for: set[str] | None = None,
+        silently_drop: set[str] | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.records: list[DeviceUserRecord] = list(records or [])
+        #: Employee codes whose add raises, to model a terminal refusing one record.
+        self.fail_add_for = fail_add_for or set()
+        #: Employee codes the terminal accepts but does not store (read-back catches it).
+        self.silently_drop = silently_drop or set()
+        self.added: list[tuple[int, str, str, str | None]] = []
+
+    def list_user_records(self) -> list[DeviceUserRecord]:
+        self._maybe_fail()
+        return [DeviceUserRecord(r.uid, r.user_id, r.name, r.card) for r in self.records]
+
+    def add_user(self, *, uid: int, user_id: str, name: str, card: str | None) -> None:
+        if user_id in self.fail_add_for:
+            raise DeviceUnavailableError(f"Terminal refused {user_id}.")
+        self.added.append((uid, user_id, name, card))
+        if user_id in self.silently_drop:
+            return
+        self.records = [r for r in self.records if r.uid != uid]  # overwrite, like the hardware
+        self.records.append(DeviceUserRecord(uid, user_id, name, card))

@@ -151,6 +151,11 @@ class HrmsProfile(BaseModel):
 
     attendance_path: str = PLACEHOLDER_PATH
     method: str = "POST"
+    #: GET endpoint listing the employees to register on the terminals. Defaults to the
+    #: VectorEdge HRMS path, which is the only HRMS this bridge ships against, so an
+    #: install that predates this field keeps working. ``None`` switches the
+    #: "Sync new employees" feature off for an HRMS that has no such endpoint.
+    employees_path: str | None = "/api/v1/biometric/employees"
     auth: AuthConfig = Field(default_factory=AuthConfig)
     tenant: TenantConfig = Field(default_factory=TenantConfig)
     extra_headers: dict[str, str] = Field(default_factory=dict)
@@ -179,6 +184,13 @@ class HrmsProfile(BaseModel):
     def _path_is_relative(cls, value: str) -> str:
         if not value.startswith("/"):
             raise ValueError("attendance_path must start with '/'.")
+        return value
+
+    @field_validator("employees_path")
+    @classmethod
+    def _employees_path_is_relative(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith("/"):
+            raise ValueError("employees_path must start with '/'.")
         return value
 
     @property

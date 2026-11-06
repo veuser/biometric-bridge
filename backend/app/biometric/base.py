@@ -86,9 +86,11 @@ class ConnectionTestResult:
 class BiometricDevice(ABC):
     """A biometric attendance terminal the bridge can read from.
 
-    Read-only by design. No implementation may expose clearing the device buffer,
-    setting the device clock, or enrolling users: the bridge is not the system of
-    record and must never be able to destroy attendance data on the hardware.
+    Read-only by design. No implementation may expose clearing the device buffer or
+    setting the device clock: the bridge is not the system of record and must never be
+    able to destroy attendance data on the hardware. The single permitted write,
+    adding a user, lives on the separate :class:`EnrollableDevice` interface so the
+    attendance sync path cannot reach it.
     """
 
     @abstractmethod
@@ -118,3 +120,44 @@ class BiometricDevice(ABC):
 
     @abstractmethod
     def get_users(self) -> list[DeviceUser]: ...
+
+
+@dataclass(slots=True)
+class DeviceUserRecord:
+    """A user as stored on the terminal, with the fields needed to add one safely.
+
+    ``uid`` is the terminal's internal slot number. It is distinct from ``user_id``
+    (the employee code) and writing to an occupied ``uid`` silently overwrites that
+    user, so callers must pick an unused one.
+    """
+
+    uid: int
+    user_id: str
+    name: str
+    #: Card number as digits, or ``None`` when the user has no card.
+    card: str | None = None
+
+
+class EnrollableDevice(ABC):
+    """The one and only write capability the bridge has against a terminal: **adding a user**.
+
+    Deliberately a separate interface from :class:`BiometricDevice`. The read path
+    (attendance sync) takes a ``BiometricDevice`` and cannot reach anything here, so a
+    bug in the sync engine cannot modify a terminal. And the surface is deliberately
+    tiny: there is no update, no delete, no clearing of data and no clock setting.
+    ``tests/unit/test_enrollment_write_surface.py`` fails if that ever grows.
+
+    Fingerprints cannot be captured remotely, so a user added here has a name and
+    optionally a card; a finger, if wanted, is enrolled on the terminal itself.
+    """
+
+    @abstractmethod
+    def list_user_records(self) -> list[DeviceUserRecord]: ...
+
+    @abstractmethod
+    def add_user(self, *, uid: int, user_id: str, name: str, card: str | None) -> None:
+        """Create a normal (non-admin) user in the unused slot ``uid``.
+
+        Callers must have checked that ``uid`` and ``user_id`` are both unused; this
+        method does not protect an existing user from being overwritten.
+        """

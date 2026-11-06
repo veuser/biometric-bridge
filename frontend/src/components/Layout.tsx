@@ -11,6 +11,7 @@ const LINKS = [
   { to: '/devices', label: 'Devices' },
   { to: '/hrms', label: 'HRMS Configuration' },
   { to: '/sync', label: 'Synchronization' },
+  { to: '/enrollment', label: 'Employee Registration' },
   { to: '/history', label: 'Sync History' },
   { to: '/settings', label: 'Settings' },
   { to: '/users', label: 'Users' },
