@@ -29,6 +29,36 @@ def row(code: str, name: str = "N", card: str | None = None) -> dict[str, object
     return {"employeeCode": code, "name": name, "cardNumber": card}
 
 
+#: Byte-for-byte what HRMS sends. The same literal is pinned on the HRMS side in
+#: BiometricEmployeeContractTests.WirePage, so renaming a property on either side fails a
+#: test instead of producing a list that parses as empty ("nobody to register") in production.
+HRMS_WIRE_PAGE = (
+    '{"employees":[{"employeeCode":"IQ-1004","name":"Manoj Settebathula","cardNumber":"12345678"},'
+    '{"employeeCode":"IQ-1005","name":"No Card","cardNumber":null}],"nextAfterId":null}'
+)
+
+
+def test_the_exact_payload_hrms_sends_is_read_correctly() -> None:
+    from app.services.hrms_service import load_shipped_profile
+
+    client = HrmsClient(
+        base_url="https://hrms.example.com",
+        profile=load_shipped_profile(),
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(
+                200, content=HRMS_WIRE_PAGE, headers={"content-type": "application/json"}
+            )
+        ),
+    )
+
+    employees = client.list_employees(api_key=API_KEY)
+
+    assert [(e.employee_code, e.name, e.card_number) for e in employees] == [
+        ("IQ-1004", "Manoj Settebathula", "12345678"),
+        ("IQ-1005", "No Card", None),
+    ]
+
+
 def test_follows_the_cursor_across_pages_and_sends_the_key() -> None:
     seen: list[httpx.Request] = []
 
